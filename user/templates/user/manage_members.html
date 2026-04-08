@@ -1,0 +1,56 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>组织成员管理</title>
+  <link rel="stylesheet" href="{% static 'user/css/manage_members.css' %}">
+</head>
+<body>
+  <!-- 页面标题 -->
+  <h2 class="page-title">组织成员管理</h2>
+
+  <!-- 成员列表 -->
+  <div class="member-list">
+    {% for member in members %}
+      <div class="member-card">
+        <div class="member-info">
+          <strong class="member-name">{{ member.username }}</strong>
+        </div>
+
+        <div class="member-actions">
+          {% if member.role_status == 'none' %}
+            <form method="post" action="{% url 'set_role' member.id %}">
+              {% csrf_token %}
+              <select name="role" class="role-select">
+                <option value="annotator">标注员</option>
+                <option value="reviewer">质检员</option>
+                <option value="both">标注员+质检员</option>
+              </select>
+              <button type="submit" class="btn-primary">确认</button>
+            </form>
+
+          {% elif member.role_status == 'annotator' %}
+            <form method="post" action="{% url 'toggle_role' member.id 'annotator' %}">
+              {% csrf_token %}
+              <button type="submit" class="btn-gray">标注员（点我变质检）</button>
+            </form>
+
+          {% elif member.role_status == 'reviewer' %}
+            <form method="post" action="{% url 'toggle_role' member.id 'reviewer' %}">
+              {% csrf_token %}
+              <button type="submit" class="btn-gray">质检员（点我变标注）</button>
+            </form>
+
+          {% elif member.role_status == 'both' %}
+            <form method="post" action="{% url 'toggle_role' member.id 'annotator' %}">
+              {% csrf_token %}
+              <button type="submit" class="btn-danger">标注员+质检员（点我清除）</button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</body>
+</html>

@@ -1,0 +1,57 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>甲方账号管理</title>
+  <link rel="stylesheet" href="{% static 'label/css/client_manage.css' %}">
+</head>
+<body>
+  <div class="container">
+    <h2 class="page-title">甲方账号管理</h2>
+
+    <!-- ✅ 创建甲方账号 -->
+    <div class="form-section">
+      <h3>创建甲方账号</h3>
+      <form method="post" class="create-form">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit" class="btn btn-primary">创建甲方账号</button>
+      </form>
+    </div>
+
+    <hr>
+
+    <!-- ✅ 列出甲方账号 -->
+    <h3>已有甲方账号</h3>
+    <div class="table-wrapper">
+      <table class="pkg-table">
+        <thead>
+          <tr>
+            <th>用户名</th>
+            <th>密码</th>
+            <th>上次登录</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for client in clients %}
+            <tr>
+              <td>{{ client.username }}</td>
+              <td>{{ client.raw_password|default:"(无)" }}</td>
+              <td>{{ client.last_login|date:"Y-m-d H:i"|default:"从未登录" }}</td>
+              <td>
+                <a href="{% url 'assign_client_tasks' client.id %}" class="btn btn-secondary">分配任务包</a>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="4" class="no-data">暂无甲方账号</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

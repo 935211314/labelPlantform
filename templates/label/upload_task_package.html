@@ -1,0 +1,48 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>上传任务包</title>
+  <link rel="stylesheet" href="{% static 'label/css/upload_task.css' %}">
+</head>
+<body>
+  <div class="container">
+
+    <!-- 标题 -->
+    <h2 class="page-title">📦 上传任务包</h2>
+      <!-- 可选标签库上传 -->
+    <div class="form-group">
+      <label for="id_label_file">可选标签库 (JSON)</label>
+      <input type="file" name="label_file" id="id_label_file" accept=".json">
+    </div>
+
+    <!-- 保存格式选择 -->
+    <div class="form-group">
+      <label for="id_save_format">保存格式</label>
+      <select name="save_format" id="id_save_format" class="form-control">
+        <option value="json">LabelMe JSON</option>
+        <option value="xml">Pascal VOC XML</option>
+        <option value="txt">YOLO TXT</option>
+      </select>
+    </div>
+
+    <!-- 上传表单 -->
+    <form id="uploadForm" method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit" class="btn btn-primary">📤 上传任务包</button>
+    </form>
+
+    <!-- 上传进度条 -->
+    <div class="progress-container" id="progressContainer">
+      <div class="progress-bar">
+        <div class="progress-bar-fill" id="progressBarFill">0%</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 上传进度的 JS -->
+  <script src="{% static 'label/js/upload_task.js' %}"></script>
+</body>
+</html>

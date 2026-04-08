@@ -1,0 +1,57 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>组织管理</title>
+  <link rel="stylesheet" href="{% static 'user/css/manage_organizations.css' %}">
+</head>
+<body>
+  <!-- 页面标题 -->
+  <h2 class="page-title">组织管理</h2>
+
+  <!-- 表格容器 -->
+  <div class="table-container">
+    <table class="org-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>组织名称</th>
+          <th>组织代码</th>
+          <th>创建时间</th>
+          <th>组织管理员</th>
+          <th>修改管理员</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for item in org_info_list %}
+        <tr>
+          <td>{{ item.org.id }}</td>
+            <td>
+                <a href="{% url 'organization_detail' item.org.id %}" class="org-link">
+                {{ item.org.name }}
+                 </a>
+            </td>
+          <td>{{ item.org.code }}</td>
+          <td>{{ item.org.created_at|date:"Y-m-d H:i" }}</td>
+          <td>{{ item.current_admin.username|default:"暂无管理员" }}</td>
+          <td>
+            <form method="post" action="{% url 'change_org_admin' item.org.id %}" class="admin-form">
+              {% csrf_token %}
+              <select name="admin_user_id" class="select-box">
+                <option value="">请选择成员</option>
+                {% for member in item.members %}
+                  <option value="{{ member.id }}">{{ member.username }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn-primary">更新</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

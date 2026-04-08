@@ -1,0 +1,29 @@
+{% load static %}
+<link rel="stylesheet" href="{% static 'label/css/my_package.css' %}">
+
+<div class="container">
+  <h2 class="page-title">可领取任务包列表</h2>
+
+  {% for pkg in packages %}
+    <div class="task-card">
+      <div class="task-info">
+        <strong class="task-name">{{ pkg.name }}</strong>
+      </div>
+
+      <div class="task-actions">
+        {% if my_assignment %}
+          <button class="btn btn-disabled" disabled>您已有任务包</button>
+        {% else %}
+          <form method="post" action="{% url 'claim_package' pkg.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">领取任务包</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  {% empty %}
+    <div class="no-task">
+      暂无可领取任务包
+    </div>
+  {% endfor %}
+</div>

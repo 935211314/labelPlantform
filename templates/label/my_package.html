@@ -1,0 +1,100 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>我的任务包</title>
+  <link rel="stylesheet" href="{% static 'label/css/my_package.css' %}">
+</head>
+<body>
+  <div class="container">
+
+    <!-- 正在标注的任务包 -->
+    <h2 class="page-title">正在标注的任务包</h2>
+    {% if assignment %}
+      <div class="task-card">
+        <div class="task-info">
+          <span class="task-name"><strong>{{ assignment.package.name }}</strong></span>
+          <span class="task-count">共 {{ assignment.package.imagefile_set.count }} 张图片</span>
+        </div>
+        <div class="task-actions">
+          {% if image %}
+            <a class="btn btn-primary" href="{% url 'label_interface' assignment.package.id %}?mode=annotate">继续标注</a>
+          {% else %}
+            <span class="no-task">任务包中无图片</span>
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <div class="no-task">你当前没有正在标注的任务包</div>
+    {% endif %}
+
+    <!-- 已完成任务包 -->
+    <h2 class="page-title">已完成任务包</h2>
+    {% if completed_assignments %}
+      {% for a in completed_assignments %}
+        <div class="task-card">
+          <div class="task-info">
+            <span class="task-name"><strong>{{ a.package.name }}</strong></span>
+            <span class="completed">已完成</span>
+
+            {% comment %} ✅ 质检状态 {% endcomment %}
+            {% if a.qc_status == 'pass' %}
+              <span class="badge badge-pass">✅ 质检合格</span>
+            {% elif a.qc_status == 'fail' %}
+              <span class="badge badge-fail">❌ 质检不合格</span>
+            {% else %}
+              <span class="badge badge-pending">⏳ 未质检</span>
+            {% endif %}
+
+            {% comment %} ✅ 甲方审核状态 {% endcomment %}
+            {% if a.package.client_review_status == 'pass' %}
+              <span class="badge badge-pass">👍 甲方通过</span>
+            {% elif a.package.client_review_status == 'fail' %}
+              <span class="badge badge-fail">👎 甲方未通过</span>
+            {% else %}
+              <span class="badge badge-pending">⏳ 待审核</span>
+            {% endif %}
+
+
+          </div>
+
+          <div class="task-actions">
+            <a class="btn btn-gray" href="{% url 'label_interface' task_id=a.package.id %}?mode=annotate">
+              查看/继续标注
+            </a>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="no-task">暂无已完成任务包</div>
+    {% endif %}
+
+
+    <!-- 可领取任务包 -->
+    <h2 class="page-title">可领取的任务包</h2>
+    {% if available_packages %}
+      {% for pkg in available_packages %}
+        <div class="task-card">
+          <div class="task-info">
+            <span class="task-name"><strong>{{ pkg.name }}</strong></span>
+            <span class="task-count">共 {{ pkg.imagefile_set.count }} 张图片</span>
+          </div>
+          <div class="task-actions">
+            {% if assignment %}
+              <button class="btn btn-disabled" disabled>您已有任务包</button>
+            {% else %}
+              <form method="post" action="{% url 'claim_package' pkg.id %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success">领取任务包</button>
+              </form>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="no-task">暂无可领取任务包</div>
+    {% endif %}
+  </div>
+</body>
+</html>

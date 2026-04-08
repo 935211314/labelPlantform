@@ -1,0 +1,45 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{ org.name }} - 成员管理</title>
+  <link rel="stylesheet" href="{% static 'user/css/org_detail.css' %}">
+</head>
+<body>
+  <h2 class="page-title">组织：{{ org.name }} - 成员管理</h2>
+
+  <table class="member-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>用户名</th>
+        <th>邮箱</th>
+        <th>加入时间</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for member in members %}
+      <tr>
+        <td>{{ member.id }}</td>
+        <td>{{ member.username }}</td>
+        <td>{{ member.email }}</td>
+        <td>{{ member.date_joined|date:"Y-m-d H:i" }}</td>
+        <td>
+          <form method="post" action="{% url 'delete_org_member' org.id member.id %}" style="display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="btn-danger"
+              onclick="return confirm('确认删除 {{ member.username }}？该账号会被彻底删除，并释放任务包！')">
+              删除成员
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p><a href="{% url 'manage_organizations' %}">⬅ 返回组织列表</a></p>
+</body>
+</html>

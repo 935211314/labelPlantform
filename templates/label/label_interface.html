@@ -1,0 +1,23 @@
+{% load static %}  <!-- 加上这一行 -->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>标注界面</title>
+    <style>
+        iframe {
+            width: 100%;
+            height: 90vh;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <h2>当前标注图片：{{ image.filename }}</h2>
+
+    <iframe src="{% static 'labelme/tool.html' %}?mode=i&folder=&image={{ image.image.url }}"></iframe>
+
+    <p><a href="{% url 'my_task_package' %}">返回我的任务包</a></p>
+</body>
+</html>

@@ -1,0 +1,210 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>图像标注工具 - 网页版</title>
+  <!-- ✅ 注入后端变量 -->
+  <script>
+    const image_urls = JSON.parse('{{ image_urls|default:"[]"|escapejs }}');
+    const task_name = "{{ task_name|default:"unnamed_task"|escapejs }}";
+    const task_id = {{ task_id }};
+    const saveFormat = "{{ save_format|default:"json" }}";
+    const labels = JSON.parse('{{ labels|default:"[]"|escapejs }}');
+    const is_qc_mode = {{ is_qc_mode|yesno:"true,false"|lower }};
+    const isClient = {{ is_client|yesno:"true,false" }};
+    const isQcMode = {{ is_qc_mode|yesno:"true,false" }};
+    const extraLabels = JSON.parse('{{ extra_labels|default:"[]"|escapejs }}');
+    // ✅ 注入后端标签文件的内容
+    window.extraLabels = JSON.parse('{{ extra_labels|default:"[]"|escapejs }}');
+  </script>
+
+  <!-- ✅ 样式 -->
+  <link rel="stylesheet" href="{% static 'labelweb/css/labelweb.css' %}" />
+  <style>
+    /* ✅ 批量操作工具栏样式 */
+    #batchTools {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      gap: 8px;
+    }
+    #batchTools button {
+      flex: 1;
+      padding: 6px;
+      font-size: 13px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+      transition: 0.2s;
+    }
+    #batchTools button:disabled {
+      background: #f5f5f5;
+      color: #aaa;
+      cursor: not-allowed;
+    }
+    #batchTools button:hover:enabled {
+      background: #e6f7ff;
+      border-color: #91d5ff;
+      color: #0056b3;
+    }
+
+    /* ✅ 弹窗 */
+    .batch-modal {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      z-index: 3000;
+      min-width: 260px;
+    }
+    .batch-modal h3 {
+      margin-top: 0;
+      font-size: 16px;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .batch-modal input {
+      width: 90%;
+      padding: 6px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+    .batch-modal .modal-actions {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+    .batch-modal button {
+      padding: 6px 12px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+    }
+    .modal-ok {
+      background: #28a745;
+      color: #fff;
+    }
+    .modal-cancel {
+      background: #6c757d;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <!-- ✅ 顶部工具栏 -->
+  <div class="TopBar">
+    <div class="toolbar-left">
+      <button id="prevIm">上一张 (A)</button>
+      <button id="nextIm">下一张 (D)</button>
+      <button id="modeRect" class="mode-btn active">矩形模式</button>
+      <button id="modePoly" class="mode-btn">多边形模式</button>
+      <button id="toggleBoxes">隐藏标注框</button>
+      <button id="clientSubmitBtn" class="submit-btn" style="display:none;">提交</button>
+      <button id="submitTask" style="display:none;">提交任务包</button>
+      <div id="qcControl" style="display:none;">
+        <button id="qcDone">质检完成</button>
+        <span id="qcResultOptions" style="display:none;">
+          <button id="qcPass">合格</button>
+          <button id="qcFail">不合格</button>
+        </span>
+      </div>
+    </div>
+    <div class="toolbar-right">
+      <button id="helpBtn">使用说明</button>
+    </div>
+  </div>
+
+  <!-- ✅ 保存提示气泡 -->
+  <div id="saveNotice" class="save-notice">已保存</div>
+
+  <div class="MainLayout">
+    <div class="ImBox">
+      <h1>
+        待标注图像
+        <span id="imageCounter">(0/0)</span>
+      </h1>
+      <canvas id="annotationCanvas" class="Imcanvas"></canvas>
+    </div>
+
+    <div class="CateBox">
+      <h1>类别</h1>
+      <form class="Label" id="labelForm"></form>
+      <button id="addLabelBtn">+ 添加类别</button>
+      <button id="resetLabelBtn" style="margin-top:8px;background:#f44336;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;">
+        🔄 重置类别
+      </button>
+
+      <div id="markedList">
+        <!-- ✅ 批量工具栏 -->
+    <div id="batchTools">
+      <button id="batchRenameBtn" class="batch-btn" disabled>批量修改名称</button>
+      <button id="batchAlignBtn" class="batch-btn" disabled>批量对齐位置</button>
+      <button id="batchSortBtn" class="batch-btn sort-btn">🔄 标签排序</button>
+    </div>
+
+
+        <h2>已标注</h2>
+        <ul id="markedLabels"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ 使用说明弹框 -->
+  <div class="modal-overlay" id="helpModal">
+    <div class="modal-box">
+      <h2>📖 使用说明</h2>
+      <p>欢迎使用图像标注工具，以下是主要操作和快捷键：</p>
+      <ul>
+        <li><b>鼠标左键拖动：</b>绘制新的标注框</li>
+        <li><b>Ctrl + 鼠标：</b>编辑/调整已有标注框</li>
+        <li><b>空格键：</b>切换到拖动画布模式</li>
+        <li><b>Ctrl + 滚轮：</b>缩放图像</li>
+        <li><b>0 键：</b>恢复图像原始缩放比例</li>
+        <li><b>A 键：</b>切换上一张图片</li>
+        <li><b>D 键：</b>切换下一张图片</li>
+        <li><b>S 键：</b>保存当前标注</li>
+        <li><b>Delete 键：</b>删除当前选中框</li>
+        <li><b>Ctrl + Z：</b>撤销最近的操作</li>
+      </ul>
+      <div class="modal-close" id="closeHelp">关闭</div>
+    </div>
+      <!-- 错误标注说明弹窗 -->
+    <div id="errorNoteModal" class="modal" style="display:none; position: fixed; z-index: 999; left: 0; top: 0; width: 100%; height: 100%;
+         background: rgba(0,0,0,0.5); text-align: center;">
+      <div class="modal-content" style="background: #fff; margin: 10% auto; padding: 20px; width: 300px; border-radius: 4px; text-align:left;">
+        <!-- 关闭按钮 -->
+        <span id="errorNoteClose" class="close" style="float:right; font-size:20px; cursor:pointer;">&times;</span>
+        <h3>错误标注说明</h3>
+        <!-- 文本域，用于输入或显示错误说明 -->
+        <textarea id="errorNoteText" rows="4" style="width: 100%;"></textarea>
+        <br/>
+        <!-- 保存和取消按钮 -->
+        <button id="errorNoteSaveBtn" style="margin-top:5px;">保存</button>
+        <button id="errorNoteCancelBtn" style="margin-top:5px;">取消</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ✅ 依赖的 JS -->
+  <script src="{% static 'labelweb/scripts/jquery-3.4.1.js' %}"></script>
+  <script src="{% static 'labelweb/scripts/main2.js' %}" defer></script>
+  <script src="{% static 'labelweb/scripts/qc_controls.js' %}" defer></script>
+  <script src="{% static 'labelweb/scripts/client_controls.js' %}" defer></script>
+  <script src="{% static 'labelweb/scripts/label_autocomplete.js' %}" defer></script>
+    <script src="{% static 'labelweb/scripts/label_sort.js' %}" defer></script>
+
+  <!-- ✅ 批量操作新功能 -->
+  <script src="{% static 'labelweb/scripts/batch_edit.js' %}" defer></script>
+<script src="{% static 'labelweb/scripts/qc_feedback.js' %}" defer></script>
+
+</body>
+</html>

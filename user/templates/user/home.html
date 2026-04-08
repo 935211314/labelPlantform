@@ -1,0 +1,52 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>平台首页</title>
+  <link rel="stylesheet" href="{% static 'user/css/home.css' %}">
+</head>
+<body>
+  <!-- 顶部导航栏 -->
+  <div class="navbar">
+    <div class="navbar-left">
+      <span class="welcome-text">欢迎，{{ username }}！</span>
+
+      {% if request.user.is_superuser %}
+        <a class="nav-btn" href="{% url 'upload_task_package' %}">上传任务包</a>
+        <a class="nav-btn" href="{% url 'manage_packages' %}">管理任务包</a>
+        <a class="nav-btn" href="{% url 'manage_organizations' %}">管理组织</a>
+          <a class="nav-btn" href="{% url 'client_manage' %}">甲方管理</a>
+      {% else %}
+        {% if 'annotator' in user_roles %}
+          <a class="nav-btn" href="{% url 'available_packages' %}">可领取任务包</a>
+          <a class="nav-btn" href="{% url 'my_task_package' %}">我的任务包</a>
+        {% endif %}
+        {% if 'reviewer' in user_roles %}
+          <a class="nav-btn" href="{% url 'available_qc_packages' %}">质检任务包</a>
+        {% endif %}
+      {% endif %}
+
+      {% if is_org_admin %}
+        <a class="nav-btn" href="{% url 'review_requests' %}">审核加入请求</a>
+        <a class="nav-btn" href="{% url 'manage_members' %}">组织成员管理</a>
+      {% endif %}
+        {% if request.user.is_client %}
+          <a class="nav-btn" href="{% url 'client_tasks' %}">查看任务包</a>
+        {% endif %}
+    </div>
+
+    <!-- 右侧退出按钮 -->
+    <form method="post" action="{% url 'logout' %}">
+      {% csrf_token %}
+      <button type="submit" class="logout-btn">退出登录</button>
+    </form>
+  </div>
+
+  <!-- 主体内容 -->
+  <div class="main-content">
+    <h2 class="page-title">这是平台首页</h2>
+    <p class="sub-text">根据你的权限展示功能</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>加入请求审核</title>
+  <link rel="stylesheet" href="{% static 'user/css/review_requests.css' %}">
+</head>
+<body>
+  <div class="container">
+    <h2 class="page-title">加入组织申请列表</h2>
+
+    {% if requests %}
+      <ul class="request-list">
+        {% for req in requests %}
+          <li class="request-item">
+            <span class="request-user">用户：<strong>{{ req.user.username }}</strong></span>
+            <div class="request-actions">
+              <a class="btn-approve" href="{% url 'approve_request' req.id %}">✅ 通过</a>
+              <a class="btn-reject" href="{% url 'reject_request' req.id %}">❌ 拒绝</a>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="no-requests">暂无待审批的申请。</p>
+    {% endif %}
+
+    <!-- 返回首页按钮 -->
+    <div class="back-btn-wrap">
+      <a href="/" class="btn-gray">返回首页</a>
+    </div>
+  </div>
+</body>
+</html>

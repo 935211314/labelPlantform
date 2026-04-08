@@ -1,0 +1,126 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>任务包</title>
+  <link rel="stylesheet" href="{% static 'label/css/client_tasks.css' %}">
+</head>
+<body>
+  <div class="container">
+    <h2 class="page-title">任务包</h2>
+
+    <div class="table-wrapper">
+      <form method="get">
+        <table class="pkg-table">
+          <thead>
+            <tr>
+              <th>任务包名称</th>
+              <th>创建时间</th>
+              <th>标注状态</th>
+              <th>质检状态</th>
+              <th>我的审核</th>
+              <th>操作</th>
+            </tr>
+
+            <!-- ✅ 筛选行 -->
+            <tr class="filter-row">
+              <th></th>
+              <th></th>
+
+              <!-- 标注状态筛选 -->
+              <th>
+                <select name="annotation_status" onchange="this.form.submit()">
+                  <option value="">全部</option>
+                  <option value="未开始" {% if annotation_filter == "未开始" %}selected{% endif %}>未开始</option>
+                  <option value="进行中" {% if annotation_filter == "进行中" %}selected{% endif %}>进行中</option>
+                  <option value="已完成" {% if annotation_filter == "已完成" %}selected{% endif %}>已完成</option>
+                </select>
+              </th>
+
+              <!-- 质检状态筛选 -->
+              <th>
+                <select name="qc_status" onchange="this.form.submit()">
+                  <option value="">全部</option>
+                  <option value="未开始" {% if qc_filter == "未开始" %}selected{% endif %}>未开始</option>
+                  <option value="质检中" {% if qc_filter == "质检中" %}selected{% endif %}>质检中</option>
+                  <option value="合格" {% if qc_filter == "合格" %}selected{% endif %}>合格</option>
+                  <option value="不合格" {% if qc_filter == "不合格" %}selected{% endif %}>不合格</option>
+                </select>
+              </th>
+
+              <!-- 甲方审核状态筛选 -->
+              <th>
+                <select name="review_status" onchange="this.form.submit()">
+                  <option value="">全部</option>
+                  <option value="未开始" {% if review_filter == "未开始" %}selected{% endif %}>未开始</option>
+                  <option value="通过" {% if review_filter == "通过" %}selected{% endif %}>通过</option>
+                  <option value="未通过" {% if review_filter == "未通过" %}selected{% endif %}>未通过</option>
+                </select>
+              </th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {% for task in tasks %}
+              <tr>
+                <td>{{ task.name }}</td>
+                <td>{{ task.created_at|date:"Y-m-d H:i" }}</td>
+
+                <!-- ✅ 标注状态 -->
+                <td>
+                  {% if task.annotation_status_display == '已完成' %}
+                    <span class="status-pass">已完成</span>
+                  {% elif task.annotation_status_display == '进行中' %}
+                    <span class="status-pending">进行中</span>
+                  {% else %}
+                    <span class="status-pending">未开始</span>
+                  {% endif %}
+                </td>
+
+                <!-- ✅ 质检状态 -->
+                <td>
+                  {% if task.qc_status_display == '合格' %}
+                    <span class="status-pass">合格</span>
+                  {% elif task.qc_status_display == '不合格' %}
+                    <span class="status-fail">不合格</span>
+                  {% elif task.qc_status_display == '质检中' %}
+                    <span class="status-pending">质检中</span>
+                  {% else %}
+                    <span class="status-pending">未开始</span>
+                  {% endif %}
+                </td>
+
+                <!-- ✅ 甲方审核 -->
+                <td>
+                  {% if task.client_review_display == '通过' %}
+                    <span class="status-pass">通过</span>
+                  {% elif task.client_review_display == '未通过' %}
+                    <span class="status-fail">未通过</span>
+                  {% else %}
+                    <span class="status-pending">未开始</span>
+                  {% endif %}
+                </td>
+
+                <!-- 操作 -->
+                <td>
+                  <a href="{% url 'client_view_task' task.id %}" class="btn-start">查看</a>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="6" class="no-data">暂无任务包</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </form>
+    </div>
+
+    <div class="footer-btn">
+      <a href="{% url 'home' %}" class="btn-back">返回首页</a>
+    </div>
+  </div>
+</body>
+</html>
