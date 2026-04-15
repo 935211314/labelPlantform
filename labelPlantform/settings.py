@@ -1,18 +1,34 @@
 """
 Django settings for labelPlantform project.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/4.0/topics/settings/
+
+For the full list of settings and their values, see
+https://docs.djangoproject.com/en/4.0/ref/settings/
 """
 
 import os
+import environ
 from pathlib import Path
 
+# Initialize environment variables
+env = environ.Env(
+    DEBUG=(bool, False),
+    ALLOWED_HOSTS=(list, []),
+)
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Read .env file if it exists
+environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
 # ========================
 # 基础安全配置
 # ========================
-SECRET_KEY = 'django-insecure-e)2t_7j^+epelaq8z^4+o#6^5zdg6b8cl2u5+&hjb*^m-w)n4s'
-DEBUG = True
-ALLOWED_HOSTS = []   # 生产环境要改成你的域名/IP
+SECRET_KEY = env('SECRET_KEY', default='django-insecure-development-key-change-in-production')
+DEBUG = env('DEBUG', default=True)
+ALLOWED_HOSTS = env('ALLOWED_HOSTS', default=['127.0.0.1', 'localhost'])
 
 # ========================
 # 应用配置
@@ -69,12 +85,12 @@ WSGI_APPLICATION = 'labelPlantform.wsgi.application'
 # ========================
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'annotation_db',
-        'USER': 'annotation_user',
-        'PASSWORD': '123456',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'ENGINE': env('DB_ENGINE', default='django.db.backends.sqlite3'),
+        'NAME': env('DB_NAME', default=os.path.join(BASE_DIR, 'db.sqlite3')),
+        'USER': env('DB_USER', default='annotation_user'),
+        'PASSWORD': env('DB_PASSWORD', default='123456'),
+        'HOST': env('DB_HOST', default='localhost'),
+        'PORT': env('DB_PORT', default='5432'),
     }
 }
 
