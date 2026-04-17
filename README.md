@@ -140,7 +140,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support & Contact
 
-- 📧 **Email**: [your-email@example.com](mailto:your-email@example.com)
+- Email: [whz010203@gmail.com](mailto:whz010203@gmail.com)
 - 🐛 **Issues**: [GitHub Issues](https://github.com/yourusername/labelPlantform/issues)
 - 📖 **Documentation**: [Docs](docs/)
 
