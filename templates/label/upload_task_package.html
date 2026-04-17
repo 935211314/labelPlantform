@@ -1,48 +1,118 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>上传任务包</title>
-  <link rel="stylesheet" href="{% static 'label/css/upload_task.css' %}">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>上传任务包 - 标注平台</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'label/css/upload_task.css' %}">
 </head>
 <body>
-  <div class="container">
+    <div class="app-layout">
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">L</div>
+                <span class="sidebar-brand">标注平台</span>
+            </div>
+            <div class="sidebar-user">
+                <div class="user-avatar">{{ request.user.username|make_list|first|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ request.user.username }}</div>
+                    <div class="user-role">平台管理员</div>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">任务管理</div>
+                <a href="/" class="nav-link">
+                    <span class="nav-icon">&#x1F3E0;</span> 返回首页
+                </a>
+                <a href="{% url 'upload_task_package' %}" class="nav-link active">
+                    <span class="nav-icon">&#x1F4E6;</span> 上传任务包
+                </a>
+                <a href="{% url 'manage_packages' %}" class="nav-link">
+                    <span class="nav-icon">&#x1F4CB;</span> 管理任务包
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="logout-btn">
+                        <span>&#x21A9;</span> 退出登录
+                    </button>
+                </form>
+            </div>
+        </aside>
 
-    <!-- 标题 -->
-    <h2 class="page-title">📦 上传任务包</h2>
-      <!-- 可选标签库上传 -->
-    <div class="form-group">
-      <label for="id_label_file">可选标签库 (JSON)</label>
-      <input type="file" name="label_file" id="id_label_file" accept=".json">
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <h1 class="topbar-title">上传任务包</h1>
+                    <span class="topbar-breadcrumb">上传 ZIP 文件创建新的标注任务</span>
+                </div>
+                <a href="{% url 'manage_packages' %}" class="btn btn-ghost">管理任务包</a>
+            </header>
+
+            <div class="app-content">
+                {% if messages %}
+                    {% for msg in messages %}
+                    <div class="alert alert-{{ msg.tags|default:'info' }}">{{ msg }}</div>
+                    {% endfor %}
+                {% endif %}
+
+                <div class="card" style="max-width:700px;">
+                    <div class="card-header">
+                        <h3 class="card-title">任务包信息</h3>
+                    </div>
+                    <div class="card-body">
+                        <form id="uploadForm" method="post" enctype="multipart/form-data">
+                            {% csrf_token %}
+
+                            {% for field in form %}
+                            <div class="form-group">
+                                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                {% if field.field.widget.input_type == 'file' %}
+                                    <input type="file" name="{{ field.name }}" id="{{ field.id_for_label }}" class="form-control"
+                                           {% if field.field.required %}required{% endif %}>
+                                {% elif field.field.widget.choices %}
+                                    <select name="{{ field.name }}" id="{{ field.id_for_label }}" class="form-control">
+                                        {% for value, label in field.field.choices %}
+                                            <option value="{{ value }}">{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}
+                                    <input type="text" name="{{ field.name }}" id="{{ field.id_for_label }}" class="form-control"
+                                           {% if field.field.required %}required{% endif %}>
+                                {% endif %}
+                                {% if field.errors %}
+                                <div class="alert alert-danger" style="margin-top:8px;margin-bottom:0;">{{ field.errors.0 }}</div>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+
+                            <!-- Label file upload -->
+                            <div class="form-group">
+                                <label class="form-label" for="id_label_file">可选标签库 (JSON)</label>
+                                <input type="file" name="label_file" id="id_label_file" accept=".json" class="form-control">
+                            </div>
+
+                            <button type="submit" class="btn btn-primary btn-lg" style="width:100%;">
+                                上传任务包
+                            </button>
+                        </form>
+
+                        <!-- Progress -->
+                        <div class="progress-container" id="progressContainer" style="display:none;margin-top:20px;">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressBarFill" style="width:0%;">0%</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
 
-    <!-- 保存格式选择 -->
-    <div class="form-group">
-      <label for="id_save_format">保存格式</label>
-      <select name="save_format" id="id_save_format" class="form-control">
-        <option value="json">LabelMe JSON</option>
-        <option value="xml">Pascal VOC XML</option>
-        <option value="txt">YOLO TXT</option>
-      </select>
-    </div>
-
-    <!-- 上传表单 -->
-    <form id="uploadForm" method="post" enctype="multipart/form-data">
-      {% csrf_token %}
-      {{ form.as_p }}
-      <button type="submit" class="btn btn-primary">📤 上传任务包</button>
-    </form>
-
-    <!-- 上传进度条 -->
-    <div class="progress-container" id="progressContainer">
-      <div class="progress-bar">
-        <div class="progress-bar-fill" id="progressBarFill">0%</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 上传进度的 JS -->
-  <script src="{% static 'label/js/upload_task.js' %}"></script>
+    <script src="{% static 'label/js/upload_task.js' %}"></script>
 </body>
 </html>

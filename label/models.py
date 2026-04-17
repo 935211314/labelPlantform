@@ -10,10 +10,10 @@ class TaskPackage(models.Model):
     ]
     save_format = models.CharField(max_length=10, choices=FORMAT_CHOICES, default='json')
     labels = models.TextField(blank=True, help_text="多个标签用英文逗号分隔，例如：car,bus,person")
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100, db_index=True)
     zip_file = models.FileField(upload_to='zips/')
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     # ✅ 用字符串引用，避免循环导入
     allowed_organization = models.ForeignKey(
@@ -21,7 +21,8 @@ class TaskPackage(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        help_text='可以领取该任务包的组织'
+        help_text='可以领取该任务包的组织',
+        db_index=True,
     )
 
     qc_status = models.CharField(
@@ -29,6 +30,7 @@ class TaskPackage(models.Model):
         choices=[('pass', '合格'), ('fail', '不合格')],
         null=True,
         blank=True,
+        db_index=True,
         help_text='质检状态'
     )
     # ✅ 甲方独立审核结果
@@ -37,6 +39,7 @@ class TaskPackage(models.Model):
         choices=[('pass', '通过'), ('fail', '不通过')],
         null=True,
         blank=True,
+        db_index=True,
         help_text='甲方审核状态'
     )
     #标签文件
@@ -67,21 +70,29 @@ class ImageFile(models.Model):
 
 
 class TaskAssignment(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    package = models.ForeignKey(TaskPackage, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, db_index=True)
+    package = models.ForeignKey(TaskPackage, on_delete=models.CASCADE, db_index=True)
     assigned_at = models.DateTimeField(auto_now_add=True)
-    is_completed = models.BooleanField(default=False)
+    is_completed = models.BooleanField(default=False, db_index=True)
 
     class Meta:
         unique_together = ('user', 'package')
+        indexes = [
+            models.Index(fields=['user', 'is_completed']),
+            models.Index(fields=['package', 'is_completed']),
+        ]
 
 
 class QcAssignment(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    package = models.ForeignKey(TaskPackage, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, db_index=True)
+    package = models.ForeignKey(TaskPackage, on_delete=models.CASCADE, db_index=True)
     assigned_at = models.DateTimeField(auto_now_add=True)
-    is_completed = models.BooleanField(default=False)
+    is_completed = models.BooleanField(default=False, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ('user', 'package')
+        indexes = [
+            models.Index(fields=['user', 'is_completed']),
+            models.Index(fields=['package', 'is_completed']),
+        ]

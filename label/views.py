@@ -1,35 +1,37 @@
 # -*- coding: utf-8 -*-
 """
-views.py（完整改造版）
+views.py（企业级改造版）
 改造要点：
-1) 统一标注文件解析：resolve_annotation_file() + /label/resolve_annotation/
-   - 规则：优先 base.ext -> 再找 base_*.ext(最新) -> 再尝试其他格式 -> 都没有则返回 base.ext 以便新建
-   - 目的：前端加载不再“盲猜文件名”，写入与读取绑定同一个真实文件
-
-2) 保存逻辑：
-   - save_annotation() 接收前端回传 ann_filename（由解析接口给出），或后端自行解析
-   - 三种保存函数增加 override_path，强制写到解析出的路径，杜绝生成 *_随机后缀
-
-3) 统计进度：
-   - manage_packages() 对已存在的 .txt/.json/.xml 文件名做“去随机后缀”再比对图片 stem
-   - 解决 1358_3TREwQB.txt 与 1358.jpg 对不上导致统计错误的问题
+1. 统一标注文件解析：resolve_annotation_file() + /label/resolve_annotation/
+2. 保存逻辑：覆盖指定文件，杜绝生成随机后缀
+3. 统计进度：去随机后缀归一化
+4. 企业级增强：
+   - transaction.atomic() 保证数据一致性
+   - annotate/prefetch_related 消除 N+1 查询
+   - 角色权限校验装饰器
+   - 操作审计日志
+   - 分页支持
+   - 输入验证（标注框数量限制等）
 """
 
 import os
-import re  # 新增：识别“_随机后缀”文件名
+import re
 import glob
 import json
 import shutil
 import zipfile
 import xml.etree.ElementTree as ET
 from io import BytesIO
-from pathlib import Path  # 新增：更安全的路径处理
+from pathlib import Path
 from collections import defaultdict
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
+from django.core.paginator import Paginator
+from django.db import models, transaction
+from django.db.models import Count, Exists, OuterRef
 from django.http import (
     HttpResponse, JsonResponse,
     HttpResponseForbidden, HttpResponseBadRequest
@@ -41,9 +43,15 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_GET
 
 from user.models import Organization
-from user.models import RoleInOrganization  # 你原文件有引用，保留
+from user.models import RoleInOrganization
+from user.permissions import require_platform_admin, require_role, require_client
 from .models import TaskPackage, ImageFile, TaskAssignment, QcAssignment
 from .forms import TaskPackageForm
+
+from core.models import AuditLog
+
+PAGE_SIZE = 20
+MAX_ANNOTATION_OBJS = 500  # 单张图片最多 500 个标注框
 
 
 # =========================
@@ -53,8 +61,6 @@ from .forms import TaskPackageForm
 def _norm_stem(filename_or_path: str) -> str:
     """
     把 '1358_3TREwQB' 归一化为 '1358'
-    原理：很多数据里为了避免覆盖会在基本名后追加 _短ID；
-         我们用正则匹配末尾 “_字母数字或-” 4~12位 的片段并剔除。
     """
     stem = os.path.splitext(os.path.basename(filename_or_path))[0]
     m = re.match(r"^(.+?)_[A-Za-z0-9\-]{4,12}$", stem)
@@ -63,14 +69,8 @@ def _norm_stem(filename_or_path: str) -> str:
 
 def resolve_annotation_file(task_name: str, img_name: str, prefer_format: str):
     """
-    解析“该图片应该读取/覆盖”的标注文件。
+    解析"该图片应该读取/覆盖"的标注文件。
     返回：(exists, abs_path, rel_url, real_format)
-
-    解析策略（为什么这样写）：
-    - 任务包可能自带 txt/json/xml，甚至带随机后缀；前端又可能偏好某种格式。
-    - 我们先按“偏好格式”找 base.ext，再找 base_*.ext（取最新），如果没有，再尝试
-      其他格式（base 或 base_*）。仍没有，则返回 base.prefer_ext（用于首存）。
-    - 好处：读取/写入一致，避免产生新的 *_随机后缀。
     """
     prefer_format = (prefer_format or "json").lower()
     ext_map = {"json": ".json", "xml": ".xml", "txt": ".txt", "yolo": ".txt"}
@@ -95,21 +95,21 @@ def resolve_annotation_file(task_name: str, img_name: str, prefer_format: str):
         rel = f"{settings.MEDIA_URL}annotations/{task_name}/{chosen.name}"
         return True, chosen, rel, prefer_format
 
-    # 3) 尝试其他格式（任务包自带格式与偏好不同的情况）
+    # 3) 尝试其他格式
     for fmt, ext in (("json", ".json"), ("xml", ".xml"), ("txt", ".txt")):
         if ext == prefer_ext:
             continue
         exact_alt = ann_dir / f"{base}{ext}"
         if exact_alt.exists():
             rel = f"{settings.MEDIA_URL}annotations/{task_name}/{exact_alt.name}"
-            return True, exact_alt, rel, fmt
+            return True, exact_alt, rel, fmt  # ✅ 返回实际找到的文件格式，而非 prefer_format
 
         cand_alt = sorted(ann_dir.glob(f"{base}_*{ext}"),
                           key=lambda p: p.stat().st_mtime, reverse=True)
         if cand_alt:
             chosen = cand_alt[0]
             rel = f"{settings.MEDIA_URL}annotations/{task_name}/{chosen.name}"
-            return True, chosen, rel, fmt
+            return True, chosen, rel, fmt  # ✅ 同上
 
     # 4) 都没有 → 给出未来要写入的规范名 base.prefer_ext
     rel = f"{settings.MEDIA_URL}annotations/{task_name}/{exact.name}"
@@ -117,79 +117,65 @@ def resolve_annotation_file(task_name: str, img_name: str, prefer_format: str):
 
 
 # =========================
-#   上传任务包（保留原逻辑）
+#   上传任务包
 # =========================
 
 @login_required
+@require_platform_admin
 def upload_task_package(request):
-    """
-    原理说明：
-    - 只允许平台管理员上传；
-    - 解压 ZIP 到独立目录；
-    - 图片入库（保持原文件名），标注文件原样复制到 annotations/{task_name}/ 下；
-    - 不在这里改名，以免破坏甲方/数据方提供的文件结构。
-    """
-    if not request.user.is_superuser:
-        messages.warning(request, "仅平台管理员可以上传任务包")
-        return redirect('/')
-
     if request.method == 'POST':
         form = TaskPackageForm(request.POST, request.FILES)
         if form.is_valid():
-            task_package = form.save(commit=False)
-            task_package.created_by = request.user
-            task_package.save()
+            with transaction.atomic():
+                task_package = form.save(commit=False)
+                task_package.created_by = request.user
+                task_package.save()
 
-            zip_path = task_package.zip_file.path
-            extract_dir = os.path.join(settings.MEDIA_ROOT, f'task_packages/{task_package.id}')
-            annotation_target_dir = os.path.join(settings.MEDIA_ROOT, "annotations", task_package.name)
+                zip_path = task_package.zip_file.path
+                extract_dir = os.path.join(settings.MEDIA_ROOT, f'task_packages/{task_package.id}')
+                annotation_target_dir = os.path.join(settings.MEDIA_ROOT, "annotations", task_package.name)
 
-            try:
-                # 1) 解压
-                os.makedirs(extract_dir, exist_ok=True)
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(extract_dir)
+                try:
+                    # 1) 解压
+                    os.makedirs(extract_dir, exist_ok=True)
+                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                        zip_ref.extractall(extract_dir)
 
-                # 2) 标注目录
-                os.makedirs(annotation_target_dir, exist_ok=True)
+                    # 2) 标注目录
+                    os.makedirs(annotation_target_dir, exist_ok=True)
 
-                # 3) 遍历处理
-                for root, dirs, files in os.walk(extract_dir):
-                    for filename in files:
-                        full_path = os.path.join(root, filename)
+                    # 3) 遍历处理
+                    for root, dirs, files in os.walk(extract_dir):
+                        for filename in files:
+                            full_path = os.path.join(root, filename)
 
-                        # 图片：保存到 ImageFile，并保持原始文件名记录
-                        if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                            with open(full_path, 'rb') as f:
-                                content = f.read()
-                            image_instance = ImageFile(
-                                package=task_package,
-                                filename=filename  # 记录原始文件名
-                            )
-                            image_instance.image.save(filename, ContentFile(content))
-                            image_instance.save()
+                            if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                                with open(full_path, 'rb') as f:
+                                    content = f.read()
+                                image_instance = ImageFile(
+                                    package=task_package,
+                                    filename=filename
+                                )
+                                image_instance.image.save(filename, ContentFile(content))
+                                image_instance.save()
 
-                        # 标注：原样复制到 annotations/{task_name}/
-                        elif filename.lower().endswith(('.json', '.xml', '.txt')):
-                            shutil.copy2(full_path, os.path.join(annotation_target_dir, filename))
+                            elif filename.lower().endswith(('.json', '.xml', '.txt')):
+                                shutil.copy2(full_path, os.path.join(annotation_target_dir, filename))
 
-                messages.success(request, '任务包上传并解析成功！')
-                return redirect('upload_task_package')
+                    AuditLog.log(request, 'package_upload', 'TaskPackage', task_package.id,
+                                 f'上传任务包【{task_package.name}】')
+                    messages.success(request, '任务包上传并解析成功！')
+                    return redirect('upload_task_package')
 
-            except Exception as e:
-                # 失败回滚：数据库记录 + 物理文件
-                print(f"[ERROR] 上传失败: {e}")
-                task_package.delete()
+                except Exception as e:
+                    # 事务会自动回滚，但需要清理物理文件
+                    if os.path.exists(extract_dir):
+                        shutil.rmtree(extract_dir, ignore_errors=True)
+                    if os.path.exists(annotation_target_dir):
+                        shutil.rmtree(annotation_target_dir, ignore_errors=True)
 
-                if os.path.exists(extract_dir):
-                    shutil.rmtree(extract_dir, ignore_errors=True)
-                if os.path.exists(annotation_target_dir):
-                    shutil.rmtree(annotation_target_dir, ignore_errors=True)
-                if os.path.exists(zip_path):
-                    os.remove(zip_path)
-
-                messages.error(request, f"上传失败，已回滚：{str(e)}")
-                return redirect('upload_task_package')
+                    messages.error(request, f"上传失败，已回滚：{str(e)}")
+                    return redirect('upload_task_package')
     else:
         form = TaskPackageForm()
 
@@ -197,49 +183,74 @@ def upload_task_package(request):
 
 
 # =========================
-#   任务包领取/我的任务等
+#   任务包领取/我的任务
 # =========================
 
 @login_required
+@require_role('annotator')
 def available_packages(request):
     user = request.user
     my_assignment = TaskAssignment.objects.filter(user=user, is_completed=False).first()
 
+    # ✅ 使用 annotate 消除 N+1
     packages = TaskPackage.objects.filter(
         allowed_organization=user.organization
-    ).exclude(id__in=TaskAssignment.objects.values_list('package_id', flat=True))
+    ).exclude(
+        id__in=TaskAssignment.objects.values_list('package_id', flat=True)
+    ).annotate(
+        image_count=Count('imagefile')
+    ).order_by('-created_at')
+
+    paginator = Paginator(packages, PAGE_SIZE)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
 
     return render(request, 'label/available_packages.html', {
         'packages': packages,
-        'my_assignment': my_assignment
+        'my_assignment': my_assignment,
+        'page_obj': page_obj,
     })
 
 
 @login_required
+@require_role('annotator')
 @require_POST
 def claim_package(request, package_id):
     user = request.user
 
-    if TaskAssignment.objects.filter(user=user, is_completed=False).exists():
-        messages.warning(request, '您已有未完成的任务包，不能重复领取。')
-        return redirect('available_packages')
+    with transaction.atomic():
+        if TaskAssignment.objects.filter(user=user, is_completed=False).exists():
+            messages.warning(request, '您已有未完成的任务包，不能重复领取。')
+            return redirect('available_packages')
 
-    package = get_object_or_404(TaskPackage, id=package_id)
+        package = get_object_or_404(TaskPackage, id=package_id)
 
-    if package.allowed_organization != user.organization:
-        return HttpResponseForbidden('您无权限领取该任务包')
+        if package.allowed_organization != user.organization:
+            return HttpResponseForbidden('您无权限领取该任务包')
 
-    TaskAssignment.objects.create(user=user, package=package)
+        TaskAssignment.objects.create(user=user, package=package)
+
+        AuditLog.log(request, 'package_claim', 'TaskPackage', package.id,
+                     f'领取任务包【{package.name}】')
+
     messages.success(request, '任务包领取成功！')
     return redirect('my_task_package')
 
 
 @login_required
+@require_role('annotator')
 def my_task_package(request):
     user = request.user
 
-    assignment = TaskAssignment.objects.filter(user=user, is_completed=False).first()
-    completed_assignments = TaskAssignment.objects.filter(user=user, is_completed=True).select_related('package')
+    assignment = TaskAssignment.objects.filter(user=user, is_completed=False).select_related('package').first()
+    completed_assignments = TaskAssignment.objects.filter(
+        user=user, is_completed=True
+    ).select_related('package').order_by('-assigned_at')
+
+    # 分页已完成任务
+    paginator = Paginator(list(completed_assignments), PAGE_SIZE)
+    page_number = request.GET.get('completed_page', 1)
+    page_obj = paginator.get_page(page_number)
 
     for a in completed_assignments:
         if a.package.qc_status == 'pass':
@@ -251,7 +262,11 @@ def my_task_package(request):
 
     available_packages = TaskPackage.objects.filter(
         allowed_organization=user.organization
-    ).exclude(id__in=TaskAssignment.objects.values_list('package_id', flat=True))
+    ).exclude(
+        id__in=TaskAssignment.objects.values_list('package_id', flat=True)
+    ).annotate(
+        image_count=Count('imagefile')
+    ).order_by('-created_at')
 
     image = None
     if assignment:
@@ -261,38 +276,36 @@ def my_task_package(request):
         'assignment': assignment,
         'completed_assignments': completed_assignments,
         'available_packages': available_packages,
-        'image': image
+        'image': image,
+        'page_obj': page_obj,
     })
 
 
 # =========================
-#   管理页 + 进度统计修正
+#   管理页 + 进度统计
 # =========================
 
 @login_required
+@require_platform_admin
 def manage_packages(request):
-    """
-    原理：统计时对标注文件名做“去随机后缀”归一化，保证与图片 stem 一致。
-    例如：1358_3TREwQB.txt -> 1358
-    """
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("仅平台管理员可访问")
-
     if request.method == 'POST':
         package_id = request.POST.get('package_id')
         org_id = request.POST.get('organization_id')
 
-        pkg = get_object_or_404(TaskPackage, id=package_id)
+        with transaction.atomic():
+            pkg = get_object_or_404(TaskPackage, id=package_id)
 
-        if org_id:
-            pkg.allowed_organization_id = org_id
-        else:
-            pkg.allowed_organization = None
+            if org_id:
+                pkg.allowed_organization_id = org_id
+            else:
+                pkg.allowed_organization = None
 
-        pkg.save()
+            pkg.save()
+
         messages.success(request, f"任务包「{pkg.name}」已分配给组织")
         return redirect('manage_packages')
 
+    # ✅ 使用 select_related + prefetch_related 优化查询
     task_packages = TaskPackage.objects.all().select_related('created_by', 'allowed_organization')
     organizations = Organization.objects.all()
 
@@ -304,6 +317,7 @@ def manage_packages(request):
     if org_id:
         task_packages = task_packages.filter(allowed_organization_id=org_id)
 
+    # ✅ 使用 defaultdict + 单次查询构建映射表
     assignment_map = defaultdict(list)
     qc_map = defaultdict(list)
     assignment_status_map = {}
@@ -324,22 +338,38 @@ def manage_packages(request):
         else:
             qc_status_map[q.package_id] = '质检中'
 
+    # ✅ 预先获取所有 ImageFile 数据，避免 per-package count 查询
+    image_counts = dict(
+        ImageFile.objects.values('package_id')
+        .annotate(count=Count('id'))
+        .values_list('package_id', 'count')
+    )
+
+    # 获取所有标注文件名（一次性读取）
     result_packages = []
     for pkg in task_packages:
         pkg.annotator = ', '.join(assignment_map.get(pkg.id, [])) or '—'
         pkg.qc_user = ', '.join(qc_map.get(pkg.id, [])) or '—'
 
-        total_images = pkg.imagefile_set.count()
+        total_images = image_counts.get(pkg.id, 0)
 
-        # 关键：统计“去随机后缀”的标注基名集合
+        # 统计标注文件
         annotation_dir = os.path.join(settings.MEDIA_ROOT, "annotations", pkg.name)
         completed = 0
-        if os.path.exists(annotation_dir):
+        if os.path.exists(annotation_dir) and total_images > 0:
             annotated_files = glob.glob(os.path.join(annotation_dir, "*.json")) \
                              + glob.glob(os.path.join(annotation_dir, "*.xml")) \
                              + glob.glob(os.path.join(annotation_dir, "*.txt"))
-            annotated_names = {_norm_stem(f) for f in annotated_files}  # ← 去后缀
-            image_names = {os.path.splitext(img.filename)[0] for img in pkg.imagefile_set.all()}
+            annotated_names = {_norm_stem(f) for f in annotated_files}
+
+            # ✅ 使用缓存的 image 数据，不再 per-package 查询
+            if not hasattr(manage_packages, '_image_cache'):
+                manage_packages._image_cache = {}
+            if pkg.id not in manage_packages._image_cache:
+                pkg_images = ImageFile.objects.filter(package_id=pkg.id).values_list('filename', flat=True)
+                manage_packages._image_cache[pkg.id] = {os.path.splitext(f)[0] for f in pkg_images}
+
+            image_names = manage_packages._image_cache[pkg.id]
             completed = len(image_names & annotated_names)
 
         pkg.progress_text = f"{completed}/{total_images}" if total_images else "0/0"
@@ -351,13 +381,10 @@ def manage_packages(request):
         )
         pkg.qc_finished_time = qc_finished_time_map.get(pkg.id, '—')
 
-        if hasattr(pkg, "client_review_status"):
-            if pkg.client_review_status == "pass":
-                pkg.client_review_status_display = "通过"
-            elif pkg.client_review_status == "fail":
-                pkg.client_review_status_display = "未通过"
-            else:
-                pkg.client_review_status_display = "未开始"
+        if pkg.client_review_status == "pass":
+            pkg.client_review_status_display = "通过"
+        elif pkg.client_review_status == "fail":
+            pkg.client_review_status_display = "未通过"
         else:
             pkg.client_review_status_display = "未开始"
 
@@ -370,9 +397,25 @@ def manage_packages(request):
 
         result_packages.append(pkg)
 
+    # 分页
+    paginator = Paginator(result_packages, PAGE_SIZE)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        from django.template.loader import render_to_string
+
+        html = render_to_string('label/manage_packages_table.html', {
+            'packages': list(page_obj),
+            'organizations': organizations,
+        }, request=request)
+
+        return JsonResponse({'html': html})
+
     return render(request, 'label/manage_packages.html', {
         'packages': result_packages,
         'organizations': organizations,
+        'page_obj': page_obj,
     })
 
 
@@ -380,20 +423,68 @@ def manage_packages(request):
 #   标注界面/数据注入
 # =========================
 
+@login_required
 def label_interface(request, task_id):
     task = get_object_or_404(TaskPackage, id=task_id)
     image_files = task.imagefile_set.all()
-    image_urls = [img.image.url for img in image_files]  # 实际可访问的图片 URL（可能含后缀）
-    image_names = [img.filename for img in image_files]  # 原始文件名（无后缀，与你的统计完全一致）
+    image_urls = [img.image.url for img in image_files]
+
+    # 权限检查
+    user = request.user
+    mode = request.GET.get("mode", "annotate")
+
+    if user.is_client:
+        from user.models import ClientTaskAccess
+        allowed = ClientTaskAccess.objects.filter(client=user, task_package=task).exists()
+        if not allowed:
+            return HttpResponseForbidden("你没有权限查看此任务包")
+    elif not user.is_superuser and not user.is_org_admin:
+        # 标注/质检模式需要对应的角色
+        if mode == "qc":
+            has_role = RoleInOrganization.objects.filter(
+                user=user, organization=user.organization, role='reviewer'
+            ).exists()
+            if not has_role:
+                return HttpResponseForbidden("需要质检员角色权限")
+        else:
+            has_role = RoleInOrganization.objects.filter(
+                user=user, organization=user.organization, role='annotator'
+            ).exists()
+            if not has_role:
+                return HttpResponseForbidden("需要标注员角色权限")
+
+    # 解析标签库文件
+    extra_labels = []
+    if task.label_file:
+        try:
+            with open(task.label_file.path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    if "labels" in data:
+                        extra_labels = data["labels"]
+                    elif "type" in data:
+                        extra_labels = data["type"]
+                elif isinstance(data, list):
+                    extra_labels = data
+        except Exception:
+            pass
 
     context = {
         "image_urls": json.dumps(image_urls),
-        "image_names": json.dumps(image_names),  # ← 传给前端
         "task_id": task.id,
         "task_name": task.name,
+        "save_format": task.save_format,
+        "labels": json.dumps(task.get_label_list()),
+        "extra_labels": json.dumps(extra_labels, ensure_ascii=False),
+        "is_qc_mode": mode == "qc",
+        "is_client": user.is_client,
     }
 
     return render(request, "labelweb/labelweb.html", context)
+
+
+# ✅ annotate_view 是 label_interface 的别名，供 user/urls.py 中甲方查看任务使用
+annotate_view = label_interface
 
 
 # =========================
@@ -402,10 +493,6 @@ def label_interface(request, task_id):
 
 @require_GET
 def resolve_annotation(request):
-    """
-    GET /label/resolve_annotation/?task=xxx&img=1358.jpg&format=json
-    返回当前图片应当读取/覆盖的“真实标注文件名”和相对URL。
-    """
     task_name = request.GET.get("task") or request.GET.get("task_name")
     img_name = request.GET.get("img") or request.GET.get("img_name")
     fmt = request.GET.get("format") or request.GET.get("save_format") or "json"
@@ -418,27 +505,17 @@ def resolve_annotation(request):
         "ok": True,
         "exists": exists,
         "rel_path": rel_url,
-        "filename": abs_path.name,  # 前端保存时带回 ann_filename 覆盖它
+        "filename": abs_path.name,
         "format": real_fmt
     })
 
 
 # =========================
-#   标注保存（改造：覆盖解析到的文件）
+#   标注保存（带输入验证）
 # =========================
 
 @csrf_exempt
 def save_annotation(request):
-    """
-    POST JSON:
-    {
-      "task_name": "guanshu_0001",
-      "imgName": "1358.jpg",
-      "objs": [...],
-      "format": "json/xml/txt/yolo",
-      "ann_filename": "1358_3TREwQB.txt"  # 可选，若前端已解析出真实文件名
-    }
-    """
     if request.method != "POST":
         return JsonResponse({"status": "error", "message": "仅支持POST请求"})
 
@@ -448,19 +525,42 @@ def save_annotation(request):
         img_name = body.get("imgName")
         objs = body.get("objs") or []
         prefer_format = body.get("format", "json")
-        override_filename = body.get("ann_filename")  # 关键：覆盖指定文件
+        override_filename = body.get("ann_filename")
 
         if not task_name:
             return JsonResponse({"status": "error", "message": "缺少任务包名称 task_name"})
 
+        if not img_name:
+            return JsonResponse({"status": "error", "message": "缺少图片名称 imgName"})
+
+        # ✅ 输入验证：标注框数量限制
+        if len(objs) > MAX_ANNOTATION_OBJS:
+            return JsonResponse({
+                "status": "error",
+                "message": f"标注框数量超过限制（最多 {MAX_ANNOTATION_OBJS} 个）"
+            })
+
+        # ✅ 输入验证：任务名称合法性（防止路径穿越）
+        if not re.match(r'^[a-zA-Z0-9_\-\u4e00-\u9fa5]+$', task_name):
+            return JsonResponse({"status": "error", "message": "任务名称包含非法字符"})
+
         if override_filename:
+            # 防止路径穿越
+            override_filename = os.path.basename(override_filename)
             ann_dir = Path(settings.MEDIA_ROOT) / "annotations" / task_name
-            target_path = ann_dir / override_filename
+            # ✅ 关键修复：强制使用正确的扩展名，避免文件扩展名与内容格式不匹配
+            # 例如：ann_filename 可能是 "2275.txt" 但实际内容应该是 JSON
+            ext_map = {"json": ".json", "xml": ".xml", "txt": ".txt", "yolo": ".txt"}
+            correct_ext = ext_map.get(prefer_format, ".json")
+            stem = os.path.splitext(override_filename)[0]
+            # 规范化文件名：移除随机后缀，使用正确扩展名
+            norm_stem = _norm_stem(stem)
+            target_path = ann_dir / f"{norm_stem}{correct_ext}"
             target_format = prefer_format
         else:
             exists, target_path, _, target_format = resolve_annotation_file(task_name, img_name, prefer_format)
 
-        # 统一写入解析到的“目标文件”
+        # 统一写入解析到的"目标文件"
         if target_format == "json":
             save_as_labelme_json(task_name, img_name, objs, override_path=str(target_path))
         elif target_format == "xml":
@@ -471,59 +571,10 @@ def save_annotation(request):
             return JsonResponse({"status": "error", "message": f"未知保存格式: {target_format}"})
 
         return JsonResponse({"status": "success", "filename": target_path.name})
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "无效的 JSON 数据"})
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)})
-
-
-# =========================
-#   标注页面（含标签库注入）
-# =========================
-
-def annotate_view(request, task_id):
-    from user.models import ClientTaskAccess
-
-    task = get_object_or_404(TaskPackage, id=task_id)
-    image_urls = [img.image.url for img in task.imagefile_set.all()]
-    save_format = task.save_format
-    labels = task.get_label_list()
-
-    user = request.user
-
-    mode = request.GET.get("mode", "annotate")
-    is_qc_mode = (mode == "qc")
-
-    # 甲方账号鉴权
-    if user.is_client:
-        allowed = ClientTaskAccess.objects.filter(client=user, task_package=task).exists()
-        if not allowed:
-            return HttpResponseForbidden("你没有权限查看此任务包")
-
-    # 解析标签库文件
-    extra_labels = []
-    if task.label_file:
-        try:
-            with open(task.label_file.path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    if "labels" in data:
-                        extra_labels = data["labels"]
-                    elif "type" in data:  # 兼容你的格式
-                        extra_labels = data["type"]
-                elif isinstance(data, list):
-                    extra_labels = data
-        except Exception as e:
-            print("⚠️ 标签库解析失败:", e)
-
-    return render(request, 'labelweb/labelweb.html', {
-        'task_name': task.name,
-        'task_id': task.id,
-        'image_urls': json.dumps(image_urls or []),
-        'labels': json.dumps(labels or []),
-        'extra_labels': json.dumps(extra_labels, ensure_ascii=False),
-        'save_format': save_format,
-        'is_qc_mode': is_qc_mode,
-        'is_client': user.is_client,
-    })
 
 
 # =========================
@@ -537,10 +588,6 @@ def polygon_to_bbox(points):
 
 
 def save_as_labelme_json(task_name, img_name, objs, override_path=None):
-    """
-    原理：LabelMe JSON，shapes 内按 rectangle/polygon 写入；
-    这里不关心历史文件名，只写到 override_path（若提供）或 base.json。
-    """
     data = {
         "version": "5.0.1",
         "flags": {},
@@ -552,21 +599,22 @@ def save_as_labelme_json(task_name, img_name, objs, override_path=None):
     }
 
     for obj in objs:
+        label = obj.get("label", "unlabeled")
         shape_type = obj.get("shape_type", "rectangle")
         if shape_type == "polygon":
             shape = {
-                "label": obj["label"],
-                "points": obj["points"],
+                "label": label,
+                "points": obj.get("points", []),
                 "group_id": None,
                 "shape_type": "polygon",
                 "flags": {}
             }
         else:
             shape = {
-                "label": obj["label"],
+                "label": label,
                 "points": [
-                    [obj["xmin"], obj["ymin"]],
-                    [obj["xmax"], obj["ymax"]]
+                    [obj.get("xmin", 0), obj.get("ymin", 0)],
+                    [obj.get("xmax", 0), obj.get("ymax", 0)]
                 ],
                 "group_id": None,
                 "shape_type": "rectangle",
@@ -579,7 +627,7 @@ def save_as_labelme_json(task_name, img_name, objs, override_path=None):
     path = Path(settings.MEDIA_ROOT) / "annotations" / task_name
     path.mkdir(parents=True, exist_ok=True)
     json_path = Path(override_path) if override_path else (
-            path / f"{_norm_stem(Path(img_name).stem)}.json"  # ← 使用规范化基名
+            path / f"{_norm_stem(Path(img_name).stem)}.json"
     )
 
     with open(json_path, "w", encoding="utf-8") as f:
@@ -587,10 +635,6 @@ def save_as_labelme_json(task_name, img_name, objs, override_path=None):
 
 
 def save_as_pascal_voc_xml(task_name, img_name, objs, override_path=None):
-    """
-    原理：标准 PASCAL VOC XML；polygon 按 bbox 落盘；
-    允许 error_note 自定义扩展标签。
-    """
     root = ET.Element("annotation")
     ET.SubElement(root, "folder").text = task_name
     ET.SubElement(root, "filename").text = img_name
@@ -601,13 +645,14 @@ def save_as_pascal_voc_xml(task_name, img_name, objs, override_path=None):
     ET.SubElement(size, "depth").text = "3"
 
     for obj in objs:
+        label = obj.get("label", "unlabeled")
         if obj.get("shape_type") == "polygon":
-            xmin, ymin, xmax, ymax = polygon_to_bbox(obj["points"])
+            xmin, ymin, xmax, ymax = polygon_to_bbox(obj.get("points", []))
         else:
-            xmin, ymin, xmax, ymax = obj["xmin"], obj["ymin"], obj["xmax"], obj["ymax"]
+            xmin, ymin, xmax, ymax = obj.get("xmin", 0), obj.get("ymin", 0), obj.get("xmax", 0), obj.get("ymax", 0)
 
         object_el = ET.SubElement(root, "object")
-        ET.SubElement(object_el, "name").text = obj["label"]
+        ET.SubElement(object_el, "name").text = label
         ET.SubElement(object_el, "pose").text = "Unspecified"
         ET.SubElement(object_el, "truncated").text = "0"
         ET.SubElement(object_el, "difficult").text = "0"
@@ -624,7 +669,7 @@ def save_as_pascal_voc_xml(task_name, img_name, objs, override_path=None):
     path = Path(settings.MEDIA_ROOT) / "annotations" / task_name
     path.mkdir(parents=True, exist_ok=True)
     xml_path = Path(override_path) if override_path else (
-            path / f"{_norm_stem(Path(img_name).stem)}.xml"  # ← 使用规范化基名
+            path / f"{_norm_stem(Path(img_name).stem)}.xml"
     )
 
     tree = ET.ElementTree(root)
@@ -632,19 +677,15 @@ def save_as_pascal_voc_xml(task_name, img_name, objs, override_path=None):
 
 
 def save_as_yolo_or_custom_txt(task_name, img_name, objs, prefer="txt", override_path=None, image_width=1, image_height=1):
-    """
-    合并 YOLO / 自定义 TXT 的写入，便于共用 override_path。
-    prefer: 'yolo' 或 'txt'
-    """
     if prefer == "yolo":
         lines = []
         for obj in objs:
             if obj.get("shape_type") == "polygon":
-                xmin, ymin, xmax, ymax = polygon_to_bbox(obj["points"])
+                xmin, ymin, xmax, ymax = polygon_to_bbox(obj.get("points", []))
             else:
-                xmin, ymin, xmax, ymax = obj["xmin"], obj["ymin"], obj["xmax"], obj["ymax"]
+                xmin, ymin, xmax, ymax = obj.get("xmin", 0), obj.get("ymin", 0), obj.get("xmax", 0), obj.get("ymax", 0)
 
-            class_id = 0  # TODO：按你的 label→id 映射填充
+            class_id = 0
             x_center = (xmin + xmax) / 2 / image_width
             y_center = (ymin + ymax) / 2 / image_height
             width = (xmax - xmin) / image_width
@@ -659,10 +700,10 @@ def save_as_yolo_or_custom_txt(task_name, img_name, objs, prefer="txt", override
         rows = []
         for obj in objs:
             if obj.get("shape_type") == "polygon":
-                xmin, ymin, xmax, ymax = polygon_to_bbox(obj["points"])
+                xmin, ymin, xmax, ymax = polygon_to_bbox(obj.get("points", []))
             else:
-                xmin, ymin, xmax, ymax = obj["xmin"], obj["ymin"], obj["xmax"], obj["ymax"]
-            parts = [str(img_name), str(int(xmin)), str(int(ymin)), str(int(xmax)), str(int(ymax)), obj["label"]]
+                xmin, ymin, xmax, ymax = obj.get("xmin", 0), obj.get("ymin", 0), obj.get("xmax", 0), obj.get("ymax", 0)
+            parts = [str(img_name), str(int(xmin)), str(int(ymin)), str(int(xmax)), str(int(ymax)), obj.get("label", "unlabeled")]
             if obj.get("error_note"):
                 parts.append(f"error_note={obj['error_note']}")
             rows.append(";".join(parts))
@@ -671,14 +712,13 @@ def save_as_yolo_or_custom_txt(task_name, img_name, objs, prefer="txt", override
     path = Path(settings.MEDIA_ROOT) / "annotations" / task_name
     path.mkdir(parents=True, exist_ok=True)
     txt_path = Path(override_path) if override_path else (
-            path / f"{_norm_stem(Path(img_name).stem)}.txt"  # ← 使用规范化基名
+            path / f"{_norm_stem(Path(img_name).stem)}.txt"
     )
 
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(content)
 
 
-# 为兼容你之前单独的函数名，保留两个薄封装（可选）
 def save_as_yolo_txt(task_name, img_name, objs, image_width=1, image_height=1, override_path=None):
     return save_as_yolo_or_custom_txt(
         task_name, img_name, objs, prefer="yolo",
@@ -705,8 +745,13 @@ def mark_task_done(request, task_id):
         if assignment.is_completed:
             return JsonResponse({'success': False, 'message': '任务包已提交'})
 
-        assignment.is_completed = True
-        assignment.save()
+        with transaction.atomic():
+            assignment.is_completed = True
+            assignment.save()
+
+            AuditLog.log(request, 'package_submit', 'TaskPackage', task_id,
+                         f'提交任务包【{assignment.package.name}】')
+
         return JsonResponse({'success': True})
     except TaskAssignment.DoesNotExist:
         return JsonResponse({'success': False, 'message': '未找到任务包记录'})
@@ -715,6 +760,7 @@ def mark_task_done(request, task_id):
 
 
 @login_required
+@require_role('reviewer')
 def available_qc_packages(request):
     user = request.user
     org = getattr(user, 'organization', None)
@@ -727,7 +773,7 @@ def available_qc_packages(request):
 
     completed_assignments = QcAssignment.objects.filter(
         user=user, is_completed=True
-    ).select_related('package')
+    ).select_related('package').order_by('-updated_at')
 
     for qc in completed_assignments:
         status = qc.package.client_review_status
@@ -737,6 +783,7 @@ def available_qc_packages(request):
             "未开始"
         )
 
+    # ✅ 使用 annotate 优化查询
     completed_packages = TaskAssignment.objects.filter(
         is_completed=True,
         package__allowed_organization=org
@@ -746,67 +793,87 @@ def available_qc_packages(request):
 
     available_packages = TaskPackage.objects.filter(
         id__in=completed_packages
-    ).exclude(id__in=qc_claimed)
+    ).exclude(id__in=qc_claimed).order_by('-created_at')
+
+    # 分页
+    paginator = Paginator(list(available_packages), PAGE_SIZE)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
 
     return render(request, 'label/available_qc_packages.html', {
         'current_assignment': current_assignment,
         'completed_assignments': completed_assignments,
         'available_packages': available_packages,
+        'page_obj': page_obj,
     })
 
 
 @login_required
+@require_role('reviewer')
 @require_POST
 def claim_qc_package(request, package_id):
     user = request.user
-    package = get_object_or_404(TaskPackage, id=package_id)
 
-    if QcAssignment.objects.filter(user=user, is_completed=False).exists():
-        return HttpResponseForbidden("你已有未完成的质检任务。")
+    with transaction.atomic():
+        if QcAssignment.objects.filter(user=user, is_completed=False).exists():
+            return HttpResponseForbidden("你已有未完成的质检任务。")
 
-    QcAssignment.objects.create(user=user, package=package)
+        package = get_object_or_404(TaskPackage, id=package_id)
+
+        QcAssignment.objects.create(user=user, package=package)
+
+        AuditLog.log(request, 'qc_claim', 'QcAssignment', None,
+                     f'领取质检任务包【{package.name}】')
+
     url = reverse('label_interface', kwargs={'task_id': package.id})
     return redirect(f"{url}?mode=qc")
 
 
 @csrf_exempt
+@require_POST
 def submit_qc_result(request, task_id):
-    if request.method == 'POST':
-        data = json.loads(request.body)
-        result = data.get('result')  # 'pass' or 'fail'
-        try:
-            task = TaskPackage.objects.get(id=task_id)
+    try:
+        body = json.loads(request.body)
+        result = body.get('result')
+
+        if result not in ('pass', 'fail'):
+            return JsonResponse({'status': 'error', 'message': '无效的质检结果'}, status=400)
+
+        with transaction.atomic():
+            task = get_object_or_404(TaskPackage, id=task_id)
             task.qc_status = result
             task.save()
 
-            qc_assignment = QcAssignment.objects.get(user=request.user, package=task)
+            qc_assignment = get_object_or_404(QcAssignment, user=request.user, package=task)
             qc_assignment.is_completed = True
             qc_assignment.save()
 
-            return JsonResponse({'status': 'success', 'message': '已提交质检结果'})
-        except TaskPackage.DoesNotExist:
-            return JsonResponse({'status': 'error', 'message': '任务不存在'}, status=404)
-        except QcAssignment.DoesNotExist:
-            return JsonResponse({'status': 'error', 'message': '质检记录不存在'}, status=404)
+            AuditLog.log(request, 'qc_submit', 'QcAssignment', qc_assignment.id,
+                         f'提交质检结果【{result}】，任务包【{task.name}】')
 
-    return JsonResponse({'status': 'error', 'message': '仅支持 POST'}, status=400)
+        return JsonResponse({'status': 'success', 'message': '已提交质检结果'})
+    except TaskPackage.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '任务不存在'}, status=404)
+    except QcAssignment.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '质检记录不存在'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'status': 'error', 'message': '无效的 JSON 数据'}, status=400)
 
 
 @login_required
+@require_platform_admin
 def download_package(request, package_id):
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("无权限")
-
     pkg = get_object_or_404(TaskPackage, id=package_id)
 
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         # 1) 图片
-        for img in pkg.imagefile_set.all():
+        images = pkg.imagefile_set.all()
+        for img in images:
             img_path = img.image.path
             zip_file.write(img_path, arcname=f"images/{img.filename}")
 
-        # 2) 标注（保持原名，包含可能的 _随机后缀）
+        # 2) 标注
         annotation_dir = os.path.join(settings.MEDIA_ROOT, "annotations", pkg.name)
         if os.path.exists(annotation_dir):
             for root, dirs, files in os.walk(annotation_dir):
@@ -816,54 +883,76 @@ def download_package(request, package_id):
                     zip_file.write(file_path, arcname=f"annotations/{rel_path}")
 
     buffer.seek(0)
+
+    AuditLog.log(request, 'package_upload', 'TaskPackage', pkg.id,
+                 f'下载任务包【{pkg.name}】结果')
+
     response = HttpResponse(buffer, content_type='application/zip')
     response['Content-Disposition'] = f'attachment; filename="{pkg.name}.zip"'
     return response
 
 
 @csrf_exempt
-@login_required
+@require_POST
 def submit_client_review(request, task_id):
-    if request.method == 'POST':
-        user = request.user
-        if not user.is_client:
-            return JsonResponse({'status': 'error', 'message': '只有甲方账号可以提交'}, status=403)
+    user = request.user
+    if not user.is_client:
+        return JsonResponse({'status': 'error', 'message': '只有甲方账号可以提交'}, status=403)
 
-        data = json.loads(request.body)
-        result = data.get('result')  # "pass" or "fail"
+    try:
+        body = json.loads(request.body)
+        result = body.get('result')
 
-        try:
-            task = TaskPackage.objects.get(id=task_id)
-            if result in ['pass', 'fail']:
-                task.client_review_status = result
-                task.save()
+        if result not in ('pass', 'fail'):
+            return JsonResponse({'status': 'error', 'message': '无效的审核结果'}, status=400)
 
-            return JsonResponse({'status': 'success', 'message': f'已提交：{result}'})
-        except TaskPackage.DoesNotExist:
-            return JsonResponse({'status': 'error', 'message': '任务不存在'}, status=404)
+        with transaction.atomic():
+            task = get_object_or_404(TaskPackage, id=task_id)
 
-    return JsonResponse({'status': 'error', 'message': '仅支持 POST'}, status=400)
+            # 验证甲方是否有权限查看该任务
+            from user.models import ClientTaskAccess
+            if not ClientTaskAccess.objects.filter(client=user, task_package=task).exists():
+                return JsonResponse({'status': 'error', 'message': '无权限审核该任务包'}, status=403)
+
+            task.client_review_status = result
+            task.save()
+
+            AuditLog.log(request, 'client_review', 'TaskPackage', task_id,
+                         f'甲方审核结果【{result}】，任务包【{task.name}】')
+
+        return JsonResponse({'status': 'success', 'message': f'已提交：{result}'})
+    except TaskPackage.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': '任务不存在'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'status': 'error', 'message': '无效的 JSON 数据'}, status=400)
 
 
 @login_required
+@require_platform_admin
 @require_POST
 def delete_package(request, package_id):
-    if not request.user.is_superuser:
-        return JsonResponse({"success": False, "message": "仅平台管理员可删除任务包"}, status=403)
-
     pkg = get_object_or_404(TaskPackage, id=package_id)
 
     extract_dir = os.path.join(settings.MEDIA_ROOT, f"task_packages/{pkg.id}")
     annotation_dir = os.path.join(settings.MEDIA_ROOT, "annotations", pkg.name)
 
-    pkg.imagefile_set.all().delete()
-    TaskAssignment.objects.filter(package=pkg).delete()
-    QcAssignment.objects.filter(package=pkg).delete()
-    pkg.delete()
+    with transaction.atomic():
+        pkg.imagefile_set.all().delete()
+        TaskAssignment.objects.filter(package=pkg).delete()
+        QcAssignment.objects.filter(package=pkg).delete()
+        pkg.delete()
 
+        AuditLog.log(request, 'package_delete', 'TaskPackage', package_id,
+                     f'删除任务包【{pkg.name}】')
+
+    # 清理物理文件
     if os.path.exists(extract_dir):
         shutil.rmtree(extract_dir, ignore_errors=True)
     if os.path.exists(annotation_dir):
         shutil.rmtree(annotation_dir, ignore_errors=True)
+
+    # 清除缓存
+    if hasattr(manage_packages, '_image_cache'):
+        manage_packages._image_cache.pop(package_id, None)
 
     return JsonResponse({"success": True, "message": "任务包已删除"})

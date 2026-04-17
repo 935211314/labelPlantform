@@ -1,82 +1,182 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>给 {{ client.username }} 分配任务包</title>
-  <link rel="stylesheet" href="{% static 'label/css/assign_client_tasks.css' %}">
-  <script src="{% static 'labelweb/scripts/jquery-3.4.1.js' %}"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>分配任务 - {{ client.username }}</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'label/css/assign_client_tasks.css' %}">
 </head>
 <body>
-  <div class="container">
-    <h2 class="page-title">给 {{ client.username }} 分配任务包</h2>
+    <div class="app-layout">
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">L</div>
+                <span class="sidebar-brand">标注平台</span>
+            </div>
+            <div class="sidebar-user">
+                <div class="user-avatar">{{ request.user.username|make_list|first|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ request.user.username }}</div>
+                    <div class="user-role">平台管理员</div>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">平台管理</div>
+                <a href="/" class="nav-link">
+                    <span class="nav-icon">&#x1F3E0;</span> 返回首页
+                </a>
+                <a href="{% url 'client_manage' %}" class="nav-link">
+                    <span class="nav-icon">&#x1F465;</span> 甲方管理
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="logout-btn">
+                        <span>&#x21A9;</span> 退出登录
+                    </button>
+                </form>
+            </div>
+        </aside>
 
-    <!-- ✅ 筛选区域 -->
-    <form method="get" class="filter-form">
-      <label for="org">筛选组织：</label>
-      <select name="org" id="org" onchange="this.form.submit()">
-        <option value="">全部组织</option>
-        {% for org in organizations %}
-          <option value="{{ org.id }}" {% if org.id|stringformat:"s" == request.GET.org %}selected{% endif %}>
-            {{ org.name }}
-          </option>
-        {% endfor %}
-      </select>
-    </form>
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <h1 class="topbar-title">分配任务包</h1>
+                    <span class="topbar-breadcrumb">为甲方账号 【{{ client.username }}】 分配任务包</span>
+                </div>
+                <a href="{% url 'client_manage' %}" class="btn btn-ghost">返回甲方列表</a>
+            </header>
 
-    <form method="post" class="task-form">
-      {% csrf_token %}
-      <div class="table-wrapper">
-        <table class="pkg-table">
-          <thead>
-            <tr>
-              <th>
-                <input type="checkbox" id="selectAll">
-                全选
-              </th>
-              <th>任务包名称</th>
-              <th>组织</th>
-              <th>创建时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for task in all_tasks %}
-              <tr>
-                <td>
-                  <input type="checkbox" name="task_ids" value="{{ task.id }}"
-                         {% if task.id in assigned_ids %}checked{% endif %}>
-                </td>
-                <td>{{ task.name }}</td>
-                <td>{{ task.allowed_organization|default:"未分配" }}</td>
-                <td>{{ task.created_at|date:"Y-m-d H:i" }}</td>
-              </tr>
-            {% empty %}
-              <tr>
-                <td colspan="4" class="no-data">暂无符合条件的任务包</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+            <div class="app-content">
+                {% if messages %}
+                    {% for msg in messages %}
+                    <div class="alert alert-{{ msg.tags|default:'info' }}">{{ msg }}</div>
+                    {% endfor %}
+                {% endif %}
 
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">保存分配</button>
-        <a href="{% url 'client_manage' %}" class="btn btn-secondary">返回</a>
-      </div>
-    </form>
-  </div>
+                <form method="post" class="task-form">
+                    {% csrf_token %}
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">任务包列表</h3>
 
-  <script>
+                            <!-- Filter -->
+                            <select name="org" id="org-filter" class="form-control" style="width:auto;min-width:180px;">
+                                <option value="">全部组织</option>
+                                {% for org in organizations %}
+                                    <option value="{{ org.id }}" {% if org.id|stringformat:"s" == request.GET.org %}selected{% endif %}>
+                                        {{ org.name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="card-body" style="padding:0;">
+                            <div class="table-wrapper" style="border:none;border-radius:0;box-shadow:none;">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width:50px;">
+                                                <input type="checkbox" id="selectAll">
+                                            </th>
+                                            <th>任务包名称</th>
+                                            <th>所属组织</th>
+                                            <th>创建时间</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="table-body">
+                                        {% for task in all_tasks %}
+                                        <tr>
+                                            <td>
+                                                <input type="checkbox" name="task_ids" value="{{ task.id }}"
+                                                       {% if task.id in assigned_ids %}checked{% endif %}
+                                                       style="transform:scale(1.2);">
+                                            </td>
+                                            <td><strong>{{ task.name }}</strong></td>
+                                            <td>
+                                                {% if task.allowed_organization %}
+                                                    <span class="badge badge-info">{{ task.allowed_organization.name }}</span>
+                                                {% else %}
+                                                    <span class="badge badge-neutral">未分配</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ task.created_at|date:"Y-m-d H:i" }}</td>
+                                        </tr>
+                                        {% empty %}
+                                        <tr>
+                                            <td colspan="4">
+                                                <div class="empty-state" style="padding:40px 20px;">
+                                                    <div class="empty-state-text">暂无符合条件的任务包</div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="card-footer" style="display:flex;justify-content:center;gap:12px;">
+                            <button type="submit" class="btn btn-primary">保存分配</button>
+                            <a href="{% url 'client_manage' %}" class="btn btn-outline">返回</a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <script>
     document.addEventListener("DOMContentLoaded", function() {
-      const selectAll = document.getElementById("selectAll");
-      const checkboxes = document.querySelectorAll('input[name="task_ids"]');
+        const selectAll = document.getElementById("selectAll");
+        const orgFilter = document.getElementById("org-filter");
+        const baseUrl = window.location.pathname;
 
-      selectAll.addEventListener("change", function() {
-        checkboxes.forEach(cb => {
-          cb.checked = selectAll.checked;
-        });
-      });
+        if (selectAll) {
+            selectAll.addEventListener("change", function() {
+                document.querySelectorAll('input[name="task_ids"]').forEach(cb => {
+                    cb.checked = selectAll.checked;
+                });
+            });
+        }
+
+        if (orgFilter) {
+            orgFilter.addEventListener('change', function() {
+                const params = new URLSearchParams();
+                if (orgFilter.value) params.append('org', orgFilter.value);
+
+                const queryString = params.toString();
+                const url = queryString ? `${baseUrl}?${queryString}` : baseUrl;
+
+                document.body.style.cursor = 'wait';
+                fetch(url, {
+                    method: 'GET',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.html) {
+                        document.getElementById('table-body').innerHTML = data.html;
+                        // Rebind selectAll
+                        const newSelectAll = document.getElementById("selectAll");
+                        if (newSelectAll) {
+                            newSelectAll.addEventListener("change", function() {
+                                document.querySelectorAll('input[name="task_ids"]').forEach(cb => {
+                                    cb.checked = newSelectAll.checked;
+                                });
+                            });
+                        }
+                    }
+                    document.body.style.cursor = 'default';
+                })
+                .catch(error => {
+                    console.error('筛选请求失败:', error);
+                    document.body.style.cursor = 'default';
+                });
+            });
+        }
     });
-  </script>
+    </script>
 </body>
 </html>

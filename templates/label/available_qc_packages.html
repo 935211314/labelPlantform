@@ -1,96 +1,172 @@
 {% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>质检任务包 - 标注平台</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'label/css/available_qc_packages.css' %}">
+</head>
+<body>
+    <div class="app-layout">
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">L</div>
+                <span class="sidebar-brand">标注平台</span>
+            </div>
+            <div class="sidebar-user">
+                <div class="user-avatar">{{ request.user.username|make_list|first|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ request.user.username }}</div>
+                    <div class="user-role">质检员</div>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">质检工作</div>
+                <a href="/" class="nav-link">
+                    <span class="nav-icon">&#x1F3E0;</span> 返回首页
+                </a>
+                <a href="{% url 'available_qc_packages' %}" class="nav-link active">
+                    <span class="nav-icon">&#x1F50D;</span> 质检任务包
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="logout-btn">
+                        <span>&#x21A9;</span> 退出登录
+                    </button>
+                </form>
+            </div>
+        </aside>
 
-{% block extra_css %}
-<link rel="stylesheet" href="{% static 'label/css/available_qc_packages.css' %}">
-{% endblock %}
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <h1 class="topbar-title">质检任务包</h1>
+                    <span class="topbar-breadcrumb">领取并完成质检任务</span>
+                </div>
+                <a href="/" class="btn btn-ghost">返回首页</a>
+            </header>
 
-{% block content %}
-<div class="container">
-  <h2 class="page-title">质检任务包</h2>
+            <div class="app-content">
+                {% if messages %}
+                    {% for msg in messages %}
+                    <div class="alert alert-{{ msg.tags|default:'info' }}">{{ msg }}</div>
+                    {% endfor %}
+                {% endif %}
 
-  <!-- 当前正在质检的任务包 -->
-  {% if current_assignment %}
-    <div class="task-box">
-      <span class="task-name">当前任务包：<strong>{{ current_assignment.package.name }}</strong></span>
-      <a href="{% url 'label_interface' task_id=current_assignment.package.id %}?mode=qc" class="btn btn-primary">
-        继续质检
-      </a>
+                <!-- Current QC Task -->
+                {% if current_assignment %}
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <h3 class="card-title">当前质检任务</h3>
+                        <span class="badge badge-warning">进行中</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="task-card current">
+                            <div class="task-card-body">
+                                <h4 style="margin-bottom:4px;">{{ current_assignment.package.name }}</h4>
+                            </div>
+                            <div class="task-card-footer">
+                                <a href="{% url 'label_interface' task_id=current_assignment.package.id %}?mode=qc" class="btn btn-primary">继续质检</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="alert alert-info" style="margin-bottom:24px;">
+                    您当前没有正在进行的质检任务，请从下方领取新的任务。
+                </div>
+                {% endif %}
+
+                <!-- Completed QC Tasks -->
+                {% if completed_assignments %}
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <h3 class="card-title">已完成质检</h3>
+                        <span class="badge badge-success">{{ completed_assignments|length }} 个</span>
+                    </div>
+                    <div class="card-body" style="padding:0;">
+                        <div class="table-wrapper" style="border:none;border-radius:0;box-shadow:none;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>任务名</th>
+                                        <th>完成时间</th>
+                                        <th>甲方审核</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for qc in completed_assignments %}
+                                    <tr>
+                                        <td><strong>{{ qc.package.name }}</strong></td>
+                                        <td>{{ qc.updated_at|date:"Y-m-d H:i" }}</td>
+                                        <td>
+                                            {% if qc.package.client_review_status == "pass" %}
+                                                <span class="badge badge-success">通过</span>
+                                            {% elif qc.package.client_review_status == "fail" %}
+                                                <span class="badge badge-danger">未通过</span>
+                                            {% else %}
+                                                <span class="badge badge-neutral">未开始</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <a href="{% url 'label_interface' task_id=qc.package.id %}?mode=qc" class="btn btn-outline btn-sm">查看详情</a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Available QC Packages -->
+                {% if available_packages %}
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">可领取的质检任务</h3>
+                        <span class="badge badge-info">{{ available_packages|length }} 个</span>
+                    </div>
+                    <div class="card-body" style="padding:0;">
+                        <div class="table-wrapper" style="border:none;border-radius:0;box-shadow:none;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>任务名</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for pkg in available_packages %}
+                                    <tr>
+                                        <td><strong>{{ pkg.name }}</strong></td>
+                                        <td>
+                                            <form method="post" action="{% url 'claim_qc_package' package_id=pkg.id %}" style="display:inline;">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-primary btn-sm">领取并开始质检</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">&#x1F50D;</div>
+                    <div class="empty-state-text">暂无可领取的质检任务</div>
+                    <div class="empty-state-sub">请等待标注员完成标注任务</div>
+                </div>
+                {% endif %}
+            </div>
+        </main>
     </div>
-  {% else %}
-    <div class="no-task">
-      你当前未领取任何质检任务包
-    </div>
-  {% endif %}
-
-  <!-- ✅ 历史已完成的质检任务包 -->
-  {% if completed_assignments %}
-    <h3 class="section-title">已完成质检的任务包</h3>
-    <table class="qc-table">
-      <thead>
-        <tr>
-          <th>任务名</th>
-          <th>完成时间</th>
-          <th>甲方审核状态</th>  <!-- ✅ 新增 -->
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for qc in completed_assignments %}
-        <tr>
-          <td>{{ qc.package.name }}</td>
-          <td>{{ qc.updated_at|date:"Y-m-d H:i" }}</td>
-
-          <!-- ✅ 甲方审核状态 -->
-          <td>
-            {% if qc.package.client_review_status == "pass" %}
-              <span class="status-pass">通过</span>
-            {% elif qc.package.client_review_status == "fail" %}
-              <span class="status-fail">未通过</span>
-            {% else %}
-              <span class="status-pending">未开始</span>
-            {% endif %}
-          </td>
-
-          <!-- ✅ 操作 -->
-          <td>
-            <a href="{% url 'label_interface' task_id=qc.package.id %}?mode=qc" class="btn btn-gray">
-              查看详情
-            </a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <div class="no-task">暂无已完成质检任务</div>
-  {% endif %}
-
-  <!-- 可领取的质检任务包 -->
-  {% if available_packages %}
-    <h3 class="section-title">可领取的任务包</h3>
-    <table class="qc-table">
-      <thead>
-        <tr>
-          <th>任务名</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for pkg in available_packages %}
-        <tr>
-          <td>{{ pkg.name }}</td>
-          <td>
-            <form method="post" action="{% url 'claim_qc_package' package_id=pkg.id %}" style="display:inline;">
-              {% csrf_token %}
-              <button type="submit" class="btn btn-primary">领取并开始质检</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <div class="no-task">暂无可领取任务包</div>
-  {% endif %}
-</div>
-{% endblock %}
+</body>
+</html>

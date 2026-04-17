@@ -1,0 +1,26 @@
+{% for task in all_tasks %}
+<tr>
+    <td>
+        <input type="checkbox" name="task_ids" value="{{ task.id }}"
+               {% if task.id in assigned_ids %}checked{% endif %}
+               style="transform:scale(1.2);">
+    </td>
+    <td><strong>{{ task.name }}</strong></td>
+    <td>
+        {% if task.allowed_organization %}
+            <span class="badge badge-info">{{ task.allowed_organization.name }}</span>
+        {% else %}
+            <span class="badge badge-neutral">未分配</span>
+        {% endif %}
+    </td>
+    <td>{{ task.created_at|date:"Y-m-d H:i" }}</td>
+</tr>
+{% empty %}
+<tr>
+    <td colspan="4">
+        <div class="empty-state" style="padding:40px 20px;">
+            <div class="empty-state-text">暂无符合条件的任务包</div>
+        </div>
+    </td>
+</tr>
+{% endfor %}

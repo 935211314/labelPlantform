@@ -6,7 +6,7 @@ from .views import (
     review_join_requests, approve_request, reject_request,
     manage_members, toggle_role, set_role,
     register, home,
-    manage_organizations, change_org_admin,organization_detail,delete_org_member,client_manage,assign_client_tasks,client_tasks,
+    manage_organizations, change_org_admin,organization_detail,delete_org_member,client_manage,assign_client_tasks,client_tasks,delete_client,
 )
 
 urlpatterns = [
@@ -36,6 +36,7 @@ urlpatterns = [
     path('organizations/<int:org_id>/members/<int:user_id>/delete/',delete_org_member, name='delete_org_member'),
     path('client_manage/', client_manage, name='client_manage'),
     path('client_manage/<int:client_id>/assign/', assign_client_tasks, name='assign_client_tasks'),
+    path('client_manage/<int:client_id>/delete/', delete_client, name='delete_client'),
     path('client/tasks/', client_tasks, name='client_tasks'),
     path('client/tasks/<int:task_id>/', annotate_view, name='client_view_task'),
 

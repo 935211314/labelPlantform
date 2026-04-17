@@ -1,100 +1,162 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <title>我的任务包</title>
-  <link rel="stylesheet" href="{% static 'label/css/my_package.css' %}">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>我的任务包 - 标注平台</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'label/css/my_package.css' %}">
 </head>
 <body>
-  <div class="container">
+    <div class="app-layout">
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">L</div>
+                <span class="sidebar-brand">标注平台</span>
+            </div>
+            <div class="sidebar-user">
+                <div class="user-avatar">{{ request.user.username|make_list|first|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ request.user.username }}</div>
+                    <div class="user-role">标注员</div>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">标注工作</div>
+                <a href="/" class="nav-link">
+                    <span class="nav-icon">&#x1F3E0;</span> 返回首页
+                </a>
+                <a href="{% url 'available_packages' %}" class="nav-link">
+                    <span class="nav-icon">&#x1F4E5;</span> 可领取任务包
+                </a>
+                <a href="{% url 'my_task_package' %}" class="nav-link active">
+                    <span class="nav-icon">&#x1F4DD;</span> 我的任务包
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="logout-btn">
+                        <span>&#x21A9;</span> 退出登录
+                    </button>
+                </form>
+            </div>
+        </aside>
 
-    <!-- 正在标注的任务包 -->
-    <h2 class="page-title">正在标注的任务包</h2>
-    {% if assignment %}
-      <div class="task-card">
-        <div class="task-info">
-          <span class="task-name"><strong>{{ assignment.package.name }}</strong></span>
-          <span class="task-count">共 {{ assignment.package.imagefile_set.count }} 张图片</span>
-        </div>
-        <div class="task-actions">
-          {% if image %}
-            <a class="btn btn-primary" href="{% url 'label_interface' assignment.package.id %}?mode=annotate">继续标注</a>
-          {% else %}
-            <span class="no-task">任务包中无图片</span>
-          {% endif %}
-        </div>
-      </div>
-    {% else %}
-      <div class="no-task">你当前没有正在标注的任务包</div>
-    {% endif %}
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <h1 class="topbar-title">我的任务包</h1>
+                    <span class="topbar-breadcrumb">查看和管理您的标注任务</span>
+                </div>
+                <a href="{% url 'available_packages' %}" class="btn btn-ghost">可领取任务</a>
+            </header>
 
-    <!-- 已完成任务包 -->
-    <h2 class="page-title">已完成任务包</h2>
-    {% if completed_assignments %}
-      {% for a in completed_assignments %}
-        <div class="task-card">
-          <div class="task-info">
-            <span class="task-name"><strong>{{ a.package.name }}</strong></span>
-            <span class="completed">已完成</span>
+            <div class="app-content">
+                {% if messages %}
+                    {% for msg in messages %}
+                    <div class="alert alert-{{ msg.tags|default:'info' }}">{{ msg }}</div>
+                    {% endfor %}
+                {% endif %}
 
-            {% comment %} ✅ 质检状态 {% endcomment %}
-            {% if a.qc_status == 'pass' %}
-              <span class="badge badge-pass">✅ 质检合格</span>
-            {% elif a.qc_status == 'fail' %}
-              <span class="badge badge-fail">❌ 质检不合格</span>
-            {% else %}
-              <span class="badge badge-pending">⏳ 未质检</span>
-            {% endif %}
+                <!-- Current Task -->
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <h3 class="card-title">正在标注</h3>
+                    </div>
+                    <div class="card-body">
+                        {% if assignment %}
+                        <div class="task-card current">
+                            <div class="task-card-body">
+                                <h4 style="margin-bottom:8px;">{{ assignment.package.name }}</h4>
+                                <p style="color:var(--text-secondary);margin:0 0 12px;">共 {{ assignment.package.imagefile_set.count }} 张图片</p>
+                            </div>
+                            <div class="task-card-footer">
+                                {% if image %}
+                                    <a class="btn btn-primary" href="{% url 'label_interface' assignment.package.id %}?mode=annotate">继续标注</a>
+                                {% else %}
+                                    <span class="badge badge-warning">任务包中无图片</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="empty-state" style="padding:30px 20px;">
+                            <div class="empty-state-text">当前没有正在标注的任务包</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
 
-            {% comment %} ✅ 甲方审核状态 {% endcomment %}
-            {% if a.package.client_review_status == 'pass' %}
-              <span class="badge badge-pass">👍 甲方通过</span>
-            {% elif a.package.client_review_status == 'fail' %}
-              <span class="badge badge-fail">👎 甲方未通过</span>
-            {% else %}
-              <span class="badge badge-pending">⏳ 待审核</span>
-            {% endif %}
+                <!-- Completed Tasks -->
+                {% if completed_assignments %}
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <h3 class="card-title">已完成任务</h3>
+                        <span class="badge badge-success">{{ completed_assignments|length }} 个</span>
+                    </div>
+                    <div class="card-body" style="padding:0;">
+                        {% for a in completed_assignments %}
+                        <div class="task-card">
+                            <div class="task-card-body">
+                                <h4 style="margin-bottom:4px;">{{ a.package.name }}</h4>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                                    <span class="badge badge-success">已完成</span>
+                                    {% if a.qc_status == 'pass' %}
+                                        <span class="badge badge-success">质检合格</span>
+                                    {% elif a.qc_status == 'fail' %}
+                                        <span class="badge badge-danger">质检不合格</span>
+                                    {% else %}
+                                        <span class="badge badge-neutral">未质检</span>
+                                    {% endif %}
+                                    {% if a.package.client_review_status == 'pass' %}
+                                        <span class="badge badge-success">甲方通过</span>
+                                    {% elif a.package.client_review_status == 'fail' %}
+                                        <span class="badge badge-danger">甲方未通过</span>
+                                    {% else %}
+                                        <span class="badge badge-neutral">待审核</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="task-card-footer">
+                                <a class="btn btn-outline btn-sm" href="{% url 'label_interface' task_id=a.package.id %}?mode=annotate">查看/继续标注</a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
 
-
-          </div>
-
-          <div class="task-actions">
-            <a class="btn btn-gray" href="{% url 'label_interface' task_id=a.package.id %}?mode=annotate">
-              查看/继续标注
-            </a>
-          </div>
-        </div>
-      {% endfor %}
-    {% else %}
-      <div class="no-task">暂无已完成任务包</div>
-    {% endif %}
-
-
-    <!-- 可领取任务包 -->
-    <h2 class="page-title">可领取的任务包</h2>
-    {% if available_packages %}
-      {% for pkg in available_packages %}
-        <div class="task-card">
-          <div class="task-info">
-            <span class="task-name"><strong>{{ pkg.name }}</strong></span>
-            <span class="task-count">共 {{ pkg.imagefile_set.count }} 张图片</span>
-          </div>
-          <div class="task-actions">
-            {% if assignment %}
-              <button class="btn btn-disabled" disabled>您已有任务包</button>
-            {% else %}
-              <form method="post" action="{% url 'claim_package' pkg.id %}">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-success">领取任务包</button>
-              </form>
-            {% endif %}
-          </div>
-        </div>
-      {% endfor %}
-    {% else %}
-      <div class="no-task">暂无可领取任务包</div>
-    {% endif %}
-  </div>
+                <!-- Available Packages -->
+                {% if available_packages %}
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">可领取的任务包</h3>
+                    </div>
+                    <div class="card-body" style="padding:0;">
+                        {% for pkg in available_packages %}
+                        <div class="task-card">
+                            <div class="task-card-body">
+                                <h4 style="margin-bottom:4px;">{{ pkg.name }}</h4>
+                                <p style="color:var(--text-secondary);margin:0;">共 {{ pkg.imagefile_set.count }} 张图片</p>
+                            </div>
+                            <div class="task-card-footer">
+                                {% if assignment %}
+                                    <button class="btn btn-outline btn-sm" disabled>您已有任务包</button>
+                                {% else %}
+                                    <form method="post" action="{% url 'claim_package' pkg.id %}">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-success btn-sm">领取任务包</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </main>
+    </div>
 </body>
 </html>

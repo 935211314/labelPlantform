@@ -1,207 +1,135 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>任务包管理</title>
-  <link rel="stylesheet" href="{% static 'label/css/manage_packages.css' %}">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>任务包管理 - 标注平台</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'label/css/manage_packages.css' %}">
 </head>
 <body>
-  <div class="container">
-    <h2 class="page-title">任务包管理</h2>
-
-    <div class="table-wrapper">
-      <form method="get">
-        <table class="pkg-table">
-          <thead>
-            <tr>
-              <th>名称</th>
-              <th>上传人</th>
-              <th>上传时间</th>
-              <th>当前组织</th>
-              <th>标注人</th>
-              <th>标注状态</th>
-              <th>质检人</th>
-              <th>质检状态</th>
-              <th>质检完成时间</th>
-              <th>甲方审核</th>
-              <th>完成量</th>
-              <th>查看</th>
-              <th>操作</th> <!-- ✅ 合并 下载/删除/更新 -->
-            </tr>
-
-            <!-- ✅ 筛选行 -->
-            <tr class="filter-row">
-              <th></th> <!-- 名称 -->
-              <th></th> <!-- 上传人 -->
-              <th></th> <!-- 上传时间 -->
-              <th>
-                <select name="org" onchange="this.form.submit()">
-                  <option value="">全部</option>
-                  {% for org in organizations %}
-                    <option value="{{ org.id }}" {% if org.id|stringformat:"s" == request.GET.org %}selected{% endif %}>
-                      {{ org.name }}
-                    </option>
-                  {% endfor %}
-                </select>
-              </th>
-              <th></th> <!-- 标注人 -->
-              <th>
-                <select name="annotation_status" onchange="this.form.submit()">
-                  <option value="">全部</option>
-                  <option value="未开始" {% if request.GET.annotation_status == "未开始" %}selected{% endif %}>未开始</option>
-                  <option value="进行中" {% if request.GET.annotation_status == "进行中" %}selected{% endif %}>进行中</option>
-                  <option value="已完成" {% if request.GET.annotation_status == "已完成" %}selected{% endif %}>已完成</option>
-                </select>
-              </th>
-              <th></th> <!-- 质检人 -->
-              <th>
-                <select name="qc_status" onchange="this.form.submit()">
-                  <option value="">全部</option>
-                  <option value="未开始" {% if request.GET.qc_status == "未开始" %}selected{% endif %}>未开始</option>
-                  <option value="质检中" {% if request.GET.qc_status == "质检中" %}selected{% endif %}>质检中</option>
-                  <option value="合格" {% if request.GET.qc_status == "合格" %}selected{% endif %}>合格</option>
-                  <option value="不合格" {% if request.GET.qc_status == "不合格" %}selected{% endif %}>不合格</option>
-                </select>
-              </th>
-              <th></th> <!-- 质检完成时间 -->
-              <th>
-                <select name="client_status" onchange="this.form.submit()">
-                  <option value="">全部</option>
-                  <option value="未开始" {% if request.GET.client_status == "未开始" %}selected{% endif %}>未开始</option>
-                  <option value="通过" {% if request.GET.client_status == "通过" %}selected{% endif %}>通过</option>
-                  <option value="未通过" {% if request.GET.client_status == "未通过" %}selected{% endif %}>未通过</option>
-                </select>
-              </th>
-              <th></th> <!-- 完成量 -->
-              <th></th> <!-- 查看 -->
-              <th></th> <!-- 操作 -->
-            </tr>
-          </thead>
-
-          <tbody>
-            {% for pkg in packages %}
-            <tr>
-              <td>{{ pkg.name }}</td>
-              <td>{{ pkg.created_by.username }}</td>
-              <td>{{ pkg.created_at|date:"Y-m-d H:i" }}</td>
-
-              <!-- 当前组织 -->
-              <td>
-                {% if pkg.allowed_organization %}
-                  {{ pkg.allowed_organization.name }}
-                {% else %}
-                  <span class="status-pending">未分配</span>
-                {% endif %}
-              </td>
-
-              <td>{{ pkg.annotator }}</td>
-              <td>
-                {% if pkg.annotation_status == '已完成' %}
-                  <span class="status-pass">已完成</span>
-                {% elif pkg.annotation_status == '进行中' %}
-                  <span class="status-pending">进行中</span>
-                {% else %}
-                  <span class="status-pending">未开始</span>
-                {% endif %}
-              </td>
-
-              <td>{{ pkg.qc_user }}</td>
-              <td>
-                {% if pkg.qc_status_display == '合格' %}
-                  <span class="status-pass">合格</span>
-                {% elif pkg.qc_status_display == '不合格' %}
-                  <span class="status-fail">不合格</span>
-                {% elif pkg.qc_status_display == '质检中' %}
-                  <span class="status-pending">质检中</span>
-                {% else %}
-                  <span class="status-pending">未开始</span>
-                {% endif %}
-              </td>
-
-              <td>{{ pkg.qc_finished_time }}</td>
-
-              <td>
-                {% if pkg.client_review_status == 'pass' %}
-                  <span class="status-pass">通过</span>
-                {% elif pkg.client_review_status == 'fail' %}
-                  <span class="status-fail">未通过</span>
-                {% else %}
-                  <span class="status-pending">未开始</span>
-                {% endif %}
-              </td>
-
-              <td>{{ pkg.progress_text }}</td>
-
-              <!-- 查看 -->
-              <td>
-                <a href="{% url 'label_interface' pkg.id %}?mode=qc" class="btn-view">查看</a>
-              </td>
-
-              <!-- ✅ 合并操作列 -->
-              <td>
-                <div class="actions">
-                  <!-- 下载 -->
-                  <a href="{% url 'download_package' pkg.id %}" class="btn-download">下载</a>
-
-                  <!-- 删除 -->
-                  <button type="button" class="btn-delete"
-                          onclick="deletePackage({{ pkg.id }}, '{{ pkg.name }}')">删除</button>
-
-                  <!-- 更新组织 -->
-                  <form method="post" class="update-form">
-                    {% csrf_token %}
-                    <input type="hidden" name="package_id" value="{{ pkg.id }}">
-                    <select name="organization_id">
-                      <option value="">-- 未分配 --</option>
-                      {% for org in organizations %}
-                        <option value="{{ org.id }}" {% if pkg.allowed_organization and pkg.allowed_organization.id == org.id %}selected{% endif %}>
-                          {{ org.name }}
-                        </option>
-                      {% endfor %}
-                    </select>
-                    <button type="submit" class="btn btn-primary">更新</button>
-                  </form>
+    <div class="app-layout">
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">L</div>
+                <span class="sidebar-brand">标注平台</span>
+            </div>
+            <div class="sidebar-user">
+                <div class="user-avatar">{{ request.user.username|make_list|first|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ request.user.username }}</div>
+                    <div class="user-role">平台管理员</div>
                 </div>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </form>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">任务管理</div>
+                <a href="/" class="nav-link">
+                    <span class="nav-icon">&#x1F3E0;</span> 返回首页
+                </a>
+                <a href="{% url 'upload_task_package' %}" class="nav-link">
+                    <span class="nav-icon">&#x1F4E6;</span> 上传任务包
+                </a>
+                <a href="{% url 'manage_packages' %}" class="nav-link active">
+                    <span class="nav-icon">&#x1F4CB;</span> 管理任务包
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="logout-btn">
+                        <span>&#x21A9;</span> 退出登录
+                    </button>
+                </form>
+            </div>
+        </aside>
+
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <h1 class="topbar-title">任务包管理</h1>
+                    <span class="topbar-breadcrumb">管理和监控所有任务包进度</span>
+                </div>
+                <a href="{% url 'upload_task_package' %}" class="btn btn-primary btn-sm">上传任务包</a>
+            </header>
+
+            <div class="app-content">
+                <div class="card">
+                    <div class="card-body" style="padding:0;">
+                        <form id="filter-form" method="get">
+                            {% include 'label/manage_packages_table.html' %}
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
-  </div>
 
 <script>
-  // ✅ 读取 CSRF Token
-  function getCsrfToken() {
-      const cookieValue = document.cookie.split('; ')
-          .find(row => row.startsWith('csrftoken='));
-      return cookieValue ? cookieValue.split('=')[1] : '';
-  }
+function getCsrfToken() {
+    return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '';
+}
 
-  // ✅ 删除任务包函数
-  function deletePackage(pkgId, pkgName) {
-      if (!confirm(`确认删除任务包【${pkgName}】吗？该操作不可恢复！`)) return;
+function deletePackage(pkgId, pkgName) {
+    if (!confirm(`确认删除任务包【${pkgName}】吗？该操作不可恢复！`)) return;
 
-      fetch(`/label/delete/${pkgId}/`, {
-          method: "POST",
-          headers: {
-              "X-CSRFToken": getCsrfToken(),
-              "X-Requested-With": "XMLHttpRequest"
-          }
-      }).then(res => res.json())
-        .then(data => {
+    fetch(`/label/delete/${pkgId}/`, {
+        method: "POST",
+        headers: {
+            "X-CSRFToken": getCsrfToken(),
+            "X-Requested-With": "XMLHttpRequest"
+        }
+    }).then(res => res.json())
+      .then(data => {
           if (data.success) {
               alert(data.message);
-              location.reload();  // ✅ 删除后刷新页面
+              location.reload();
           } else {
               alert("删除失败：" + (data.message || "未知错误"));
           }
       }).catch(err => {
           alert("请求失败：" + err);
       });
-  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const baseUrl = window.location.pathname;
+    const filterIds = ['filter-org', 'filter-annotation', 'filter-qc', 'filter-client'];
+
+    function handleFilterChange() {
+        const params = new URLSearchParams();
+        const vals = {};
+        filterIds.forEach(id => {
+            const el = document.getElementById(id);
+            vals[id] = el ? el.value : '';
+        });
+        if (vals['filter-org']) params.append('org', vals['filter-org']);
+        if (vals['filter-annotation']) params.append('annotation_status', vals['filter-annotation']);
+        if (vals['filter-qc']) params.append('qc_status', vals['filter-qc']);
+        if (vals['filter-client']) params.append('client_status', vals['filter-client']);
+
+        const url = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
+        document.body.style.cursor = 'wait';
+
+        fetch(url, { method: 'GET', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(data => {
+                if (data.html) {
+                    document.querySelector('.table-wrapper form').innerHTML = data.html;
+                }
+                document.body.style.cursor = 'default';
+            })
+            .catch(err => {
+                console.error('筛选请求失败:', err);
+                document.body.style.cursor = 'default';
+            });
+    }
+
+    filterIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', handleFilterChange);
+    });
+});
 </script>
 </body>
 </html>

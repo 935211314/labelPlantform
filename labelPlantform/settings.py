@@ -31,6 +31,25 @@ DEBUG = env('DEBUG', default=True)
 ALLOWED_HOSTS = env('ALLOWED_HOSTS', default=['127.0.0.1', 'localhost'])
 
 # ========================
+# 安全 Headers
+# ========================
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_HSTS_SECONDS = 0  # 仅生产环境启用 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False  # 生产环境改为 True
+SECURE_HSTS_PRELOAD = False  # 生产环境改为 True
+SECURE_SSL_REDIRECT = False  # 生产环境改为 True
+
+# 密码安全增强
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 8}},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+]
+
+# ========================
 # 应用配置
 # ========================
 INSTALLED_APPS = [
@@ -40,6 +59,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'core',
     'user',
     'label',
     'axes',   # ✅ 登录防爆破
@@ -85,24 +105,31 @@ WSGI_APPLICATION = 'labelPlantform.wsgi.application'
 # ========================
 DATABASES = {
     'default': {
-        'ENGINE': env('DB_ENGINE', default='django.db.backends.sqlite3'),
-        'NAME': env('DB_NAME', default=os.path.join(BASE_DIR, 'db.sqlite3')),
+        'ENGINE': env('DB_ENGINE', default='django.db.backends.postgresql'),
+        # 核心修改：把默认值从sqlite路径改成PostgreSQL的数据库名annotation_db
+        'NAME': env('DB_NAME', default='annotation_db'),
         'USER': env('DB_USER', default='annotation_user'),
         'PASSWORD': env('DB_PASSWORD', default='123456'),
         'HOST': env('DB_HOST', default='localhost'),
         'PORT': env('DB_PORT', default='5432'),
+        'CONN_MAX_AGE': 600,          # ✅ 连接复用 10 分钟
+        'CONN_HEALTH_CHECKS': True,   # ✅ 健康检查
     }
 }
 
 # ========================
-# 密码安全
+# 缓存配置
 # ========================
-AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
-]
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'labelplantform-cache',
+        'TIMEOUT': 300,  # 默认 5 分钟
+        'OPTIONS': {
+            'MAX_ENTRIES': 1000,
+        }
+    }
+}
 
 # ========================
 # 国际化
@@ -130,7 +157,7 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',  # ✅ Django 默认认证
 ]
 
-AXES_ENABLED = False
+AXES_ENABLED = True  # ✅ 开启登录防爆破
 
 
 AXES_FAILURE_LIMIT = 5       # 连续 5 次失败锁定

@@ -1,35 +1,108 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>加入请求审核</title>
-  <link rel="stylesheet" href="{% static 'user/css/review_requests.css' %}">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>审核申请 - 标注平台</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'user/css/review_requests.css' %}">
 </head>
 <body>
-  <div class="container">
-    <h2 class="page-title">加入组织申请列表</h2>
-
-    {% if requests %}
-      <ul class="request-list">
-        {% for req in requests %}
-          <li class="request-item">
-            <span class="request-user">用户：<strong>{{ req.user.username }}</strong></span>
-            <div class="request-actions">
-              <a class="btn-approve" href="{% url 'approve_request' req.id %}">✅ 通过</a>
-              <a class="btn-reject" href="{% url 'reject_request' req.id %}">❌ 拒绝</a>
+    <div class="app-layout">
+        <!-- Sidebar (reuse pattern) -->
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">L</div>
+                <span class="sidebar-brand">标注平台</span>
             </div>
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="no-requests">暂无待审批的申请。</p>
-    {% endif %}
+            <div class="sidebar-user">
+                <div class="user-avatar">{{ request.user.username|make_list|first|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ request.user.username }}</div>
+                    <div class="user-role">组织管理员</div>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">组织管理</div>
+                <a href="/" class="nav-link">
+                    <span class="nav-icon">&#x1F3E0;</span> 返回首页
+                </a>
+                <a href="{% url 'review_requests' %}" class="nav-link active">
+                    <span class="nav-icon">&#x2705;</span> 审核申请
+                </a>
+                <a href="{% url 'manage_members' %}" class="nav-link">
+                    <span class="nav-icon">&#x1F464;</span> 成员管理
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="logout-btn">
+                        <span>&#x21A9;</span> 退出登录
+                    </button>
+                </form>
+            </div>
+        </aside>
 
-    <!-- 返回首页按钮 -->
-    <div class="back-btn-wrap">
-      <a href="/" class="btn-gray">返回首页</a>
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <h1 class="topbar-title">加入组织申请</h1>
+                    <span class="topbar-breadcrumb">审核成员的加入申请</span>
+                </div>
+                <a href="/" class="btn btn-ghost">返回首页</a>
+            </header>
+
+            <div class="app-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">待审批列表</h3>
+                        {% if requests %}
+                        <span class="badge badge-warning">{{ requests|length }} 条待处理</span>
+                        {% endif %}
+                    </div>
+                    <div class="card-body">
+                        {% if requests %}
+                        <div class="table-wrapper">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>用户名</th>
+                                        <th>申请时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for req in requests %}
+                                    <tr>
+                                        <td>
+                                            <strong>{{ req.user.username }}</strong>
+                                        </td>
+                                        <td>{{ req.created_at|date:"Y-m-d H:i" }}</td>
+                                        <td>
+                                            <a href="{% url 'approve_request' req.id %}" class="btn btn-success btn-sm">
+                                                &#x2705; 通过
+                                            </a>
+                                            <a href="{% url 'reject_request' req.id %}" class="btn btn-danger btn-sm">
+                                                &#x274C; 拒绝
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="empty-state">
+                            <div class="empty-state-icon">&#x2705;</div>
+                            <div class="empty-state-text">暂无待审批的申请</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
-  </div>
 </body>
 </html>

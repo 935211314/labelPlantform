@@ -1,29 +1,98 @@
 {% load static %}
-<link rel="stylesheet" href="{% static 'label/css/my_package.css' %}">
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>可领取任务包 - 标注平台</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'label/css/available_packages.css' %}">
+</head>
+<body>
+    <div class="app-layout">
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">L</div>
+                <span class="sidebar-brand">标注平台</span>
+            </div>
+            <div class="sidebar-user">
+                <div class="user-avatar">{{ request.user.username|make_list|first|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ request.user.username }}</div>
+                    <div class="user-role">标注员</div>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">标注工作</div>
+                <a href="/" class="nav-link">
+                    <span class="nav-icon">&#x1F3E0;</span> 返回首页
+                </a>
+                <a href="{% url 'available_packages' %}" class="nav-link active">
+                    <span class="nav-icon">&#x1F4E5;</span> 可领取任务包
+                </a>
+                <a href="{% url 'my_task_package' %}" class="nav-link">
+                    <span class="nav-icon">&#x1F4DD;</span> 我的任务包
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="logout-btn">
+                        <span>&#x21A9;</span> 退出登录
+                    </button>
+                </form>
+            </div>
+        </aside>
 
-<div class="container">
-  <h2 class="page-title">可领取任务包列表</h2>
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <h1 class="topbar-title">可领取任务包</h1>
+                    <span class="topbar-breadcrumb">选择并领取一个任务包开始标注</span>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <a href="{% url 'my_task_package' %}" class="btn btn-ghost">我的任务包</a>
+                    <a href="/" class="btn btn-ghost">返回首页</a>
+                </div>
+            </header>
 
-  {% for pkg in packages %}
-    <div class="task-card">
-      <div class="task-info">
-        <strong class="task-name">{{ pkg.name }}</strong>
-      </div>
+            <div class="app-content">
+                {% if my_assignment %}
+                <div class="alert alert-warning">
+                    您已有未完成的任务包：{{ my_assignment.package.name }}，请先完成当前任务。
+                </div>
+                {% endif %}
 
-      <div class="task-actions">
-        {% if my_assignment %}
-          <button class="btn btn-disabled" disabled>您已有任务包</button>
-        {% else %}
-          <form method="post" action="{% url 'claim_package' pkg.id %}">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-primary">领取任务包</button>
-          </form>
-        {% endif %}
-      </div>
+                {% if packages %}
+                <div class="task-grid">
+                    {% for pkg in packages %}
+                    <div class="task-card">
+                        <div class="task-card-header">
+                            <h4>{{ pkg.name }}</h4>
+                            <span class="badge badge-info">{{ pkg.imagefile_set.count }} 张图片</span>
+                        </div>
+                        <div class="task-card-footer">
+                            {% if my_assignment %}
+                                <button class="btn btn-outline btn-block" disabled>已有任务包</button>
+                            {% else %}
+                                <form method="post" action="{% url 'claim_package' pkg.id %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-primary btn-block">领取任务包</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">&#x1F4E5;</div>
+                    <div class="empty-state-text">暂无可领取的任务包</div>
+                    <div class="empty-state-sub">请等待管理员上传新的任务包</div>
+                </div>
+                {% endif %}
+            </div>
+        </main>
     </div>
-  {% empty %}
-    <div class="no-task">
-      暂无可领取任务包
-    </div>
-  {% endfor %}
-</div>
+</body>
+</html>

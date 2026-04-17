@@ -16,7 +16,7 @@ let isDrawing = false;
 let draggingMode = null;     // null | "top" | "bottom" | "left" | "right" | "move" | {type:'vertex', index:i}
 let dragTarget = null;
 let dragLastX = 0, dragLastY = 0;         // 拖动形状时上一次鼠标位置（用于计算偏移）
-let p1 = {}, p2 = {};
+let p1 = {};
 let ctrlPressed = false;
 
 let selectedBoxIndex = -1;   // 当前选中的框索引，-1 表示未选中
@@ -40,17 +40,14 @@ let zoomScale = 1;       // 缩放比例（默认 1）
 let offsetX = 0;         // 水平偏移
 let offsetY = 0;         // 垂直偏移
 let isPanning = false;   // 是否处于拖拽模式 (按下空格)
-let isDraggingCanvas = false; // 正在拖动画布
 let lastMouseX = 0, lastMouseY = 0;
 
 // 设置画笔粗细
 ctx.lineWidth = 3;
 
 let currentBox = {};                       // 当前正在绘制的标注框对象
-let flag_drawBbox = false;                // 是否正在绘制标注框
 
 const taskName = typeof task_name !== "undefined" ? task_name : "default_task";
-const csrftoken = getCookie("csrftoken");
 
 ///////////////////////////////////////////////
 //          工具函数 - 获取 CSRF Cookie        //
@@ -93,15 +90,21 @@ function updateImageCounter() {
 
 function loadCurrentImage() {
   const imgUrl = window.location.origin + image_urls[imgIndex];
-  // ✅ 使用后端给的“原始文件名”，避免把 URL 上的随机后缀当成真名
+  // ✅ 使用后端给的"原始文件名"，避免把 URL 上的随机后缀当成真名
   const imgName = imageNames[imgIndex];
+  const targetIndex = imgIndex; // ✅ 快照当前索引，防止异步回调中索引已变
+
   currentImage.name = imgName;
 
   // ✅ 防止沿用上一张图的 ann 文件名
   currentImage.annFilename = null;
 
-
   currentImage.onload = () => {
+    // ✅ 关键：如果用户在图片加载期间又切换了，丢弃这张过时的回调
+    if (targetIndex !== imgIndex) {
+      console.log(`⚠️ 丢弃过时图片加载回调：${imgName}，当前索引已切换到 ${imgIndex}`);
+      return;
+    }
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
 
@@ -113,6 +116,8 @@ function loadCurrentImage() {
   };
 
   currentImage.onerror = () => {
+    // ✅ 同样检查是否是过时回调
+    if (targetIndex !== imgIndex) return;
     alert("图片加载失败：" + imgUrl);
   };
 
@@ -126,17 +131,19 @@ function loadCurrentImage() {
 ///////////////////////////////////////////////
 function parseCustomTxt(res) {
   return res.text().then(text => {
-    const lines = text.trim().split('\n');
+    const lines = text.trim().split('\n').filter(l => l.trim());
     const objs = lines.map(line => {
       const parts = line.split(';');
-      const img = parts[0];
-      const xmin = +parts[1];
-      const ymin = +parts[2];
-      const xmax = +parts[3];
-      const ymax = +parts[4];
-      const label = parts[5];
+      const xmin = +(parts[1] || 0);
+      const ymin = +(parts[2] || 0);
+      const xmax = +(parts[3] || 0);
+      const ymax = +(parts[4] || 0);
+      let label = parts[5] ? parts[5].trim() : '';
+      if (!label || label === 'undefined' || label === 'null') {
+        label = 'unlabeled';
+      }
 
-      let obj = { xmin, ymin, xmax, ymax, label, shape_type: "rectangle" };
+      let obj = { xmin, ymin, xmax, ymax, label, shape_type: "rectangle", labelColor: "#FF0000" };
 
       // ✅ 如果有 error_note=xxx 就解析出来
       const notePart = parts.find(p => p.startsWith("error_note="));
@@ -159,18 +166,21 @@ function parseYoloTxt(res) {
 
     const objs = lines.map(line => {
       const parts = line.trim().split(/\s+/);
-      const cls = parseFloat(parts[0]);
-      const cx  = parseFloat(parts[1]) * W; // 归一化 → 像素
-      const cy  = parseFloat(parts[2]) * H;
-      const w   = parseFloat(parts[3]) * W;
-      const h   = parseFloat(parts[4]) * H;
+      const cls = parseFloat(parts[0]) || 0;
+      const cx  = (parseFloat(parts[1]) || 0) * W;
+      const cy  = (parseFloat(parts[2]) || 0) * H;
+      const w   = (parseFloat(parts[3]) || 0) * W;
+      const h   = (parseFloat(parts[4]) || 0) * H;
 
       const xmin = cx - w / 2;
       const ymin = cy - h / 2;
       const xmax = cx + w / 2;
       const ymax = cy + h / 2;
 
-      return { xmin, ymin, xmax, ymax, label: cls.toString(), shape_type: "rectangle" };
+      let label = cls.toString();
+      if (label === 'undefined' || label === 'null') label = 'unlabeled';
+
+      return { xmin, ymin, xmax, ymax, label, shape_type: "rectangle", labelColor: "#FF0000" };
     });
 
     return { objs };
@@ -184,17 +194,25 @@ function parseXmlAnnotation(res) {
         const parser = new DOMParser();
         const xml = parser.parseFromString(text, "application/xml");
         const objs = Array.from(xml.getElementsByTagName("object")).map(obj => {
-          const label = obj.getElementsByTagName("name")[0].textContent;
-          const xmin = +obj.getElementsByTagName("xmin")[0].textContent;
-          const ymin = +obj.getElementsByTagName("ymin")[0].textContent;
-          const xmax = +obj.getElementsByTagName("xmax")[0].textContent;
-          const ymax = +obj.getElementsByTagName("ymax")[0].textContent;
+          const nameEl = obj.getElementsByTagName("name")[0];
+          let label = nameEl ? nameEl.textContent : '';
+          if (!label || typeof label !== 'string' || label === 'undefined' || label === 'null' || label.trim() === '') {
+            label = 'unlabeled';
+          }
+          const xminEl = obj.getElementsByTagName("xmin")[0];
+          const yminEl = obj.getElementsByTagName("ymin")[0];
+          const xmaxEl = obj.getElementsByTagName("xmax")[0];
+          const ymaxEl = obj.getElementsByTagName("ymax")[0];
 
-          // ✅ 新增：解析 error_note
-          const errorNode = obj.getElementsByTagName("error_note")[0];
-          const error_note = errorNode ? errorNode.textContent.trim() : "";
-
-          return { xmin, ymin, xmax, ymax, label, error_note };
+          return {
+            xmin: +(xminEl ? xminEl.textContent : 0),
+            ymin: +(yminEl ? yminEl.textContent : 0),
+            xmax: +(xmaxEl ? xmaxEl.textContent : 0),
+            ymax: +(ymaxEl ? ymaxEl.textContent : 0),
+            label: label,
+            labelColor: "#FF0000",
+            error_note: ""
+          };
         });
 
         return { objs };
@@ -205,21 +223,27 @@ function parseLabelmeJson(res) {
   return res.json().then(data => {
     const objs = (data.shapes || []).map(shape => {
       let obj = {};
+      // ✅ 防御性校验：label 可能是 "undefined"/"null" 字符串
+      let label = shape.label;
+      if (!label || typeof label !== 'string' || label === 'undefined' || label === 'null' || label === '') {
+        label = 'unlabeled';
+      }
       if (shape.shape_type === "polygon") {
         obj = {
-          label: shape.label,
+          label: label,
           labelColor: "#FF0000",
           shape_type: "polygon",
-          points: shape.points.map(([x, y]) => [parseFloat(x), parseFloat(y)])
+          points: (shape.points || []).map(([x, y]) => [parseFloat(x) || 0, parseFloat(y) || 0])
         };
       } else {
-        const [[xmin, ymin], [xmax, ymax]] = shape.points;
+        const pts = shape.points || [];
+        const [[xmin, ymin], [xmax, ymax]] = pts.length >= 2 ? pts : [[0,0],[0,0]];
         obj = {
-          xmin: parseFloat(xmin),
-          ymin: parseFloat(ymin),
-          xmax: parseFloat(xmax),
-          ymax: parseFloat(ymax),
-          label: shape.label,
+          xmin: parseFloat(xmin) || 0,
+          ymin: parseFloat(ymin) || 0,
+          xmax: parseFloat(xmax) || 0,
+          ymax: parseFloat(ymax) || 0,
+          label: label,
           labelColor: "#FF0000",
           shape_type: "rectangle"
         };
@@ -251,42 +275,71 @@ function getParserByFormat(fmt) {
 }
 
 function loadAnnotation(imgName, callback) {
-  const format = (saveFormat?.toLowerCase() || 'json'); // 你模板里注入的保存格式
+  // ✅ 关键修复：加载新图片前先清空标注数据，防止上一张图的数据残留
+  currentImage.objects = [];
+
+  const format = (saveFormat?.toLowerCase() || 'json');
   const q = new URLSearchParams({
-    task: taskName,                // 模板注入的任务名
-    img: imgName,                  // 当前图片文件名
-    format: format,                // 偏好格式
-    t: Date.now()                  // 防缓存
+    task: taskName,
+    img: imgName,
+    format: format,
+    t: Date.now()
   });
 
-  // ① 先向后端解析真实文件名与真实格式（可能是 base.txt 或 base_XXXX.txt）
+  // ① 先向后端解析真实文件名与真实格式
   fetch(`/label/resolve_annotation/?${q.toString()}`)
     .then(res => res.json())
     .then(info => {
-      // 记住“真实文件名”，保存时回传，保证覆盖同一个文件
       currentImage.annFilename = info.filename;
       const realFmt = (info.format || format).toLowerCase();
+      console.log(`🔍 resolve_annotation [${imgName}]: exists=${info.exists}, file=${info.filename}, format=${realFmt}`);
 
-      // ② 若不存在任何标注文件 → 清空内存对象即可
+      // ② 不存在标注文件 → 已经是空数组，直接回调
       if (!info.exists) {
-        currentImage.objects = [];
         callback?.();
         updateMarkedLabels();
         return;
       }
 
-      // ③ 存在文件：按真实格式选择解析器，去拉取并解析
+      // ③ 存在文件：拉取并解析
       const parser = getParserByFormat(realFmt);
+      console.log(`📡 获取标注文件: ${info.rel_path}`);
       return fetch(`${info.rel_path}?t=${Date.now()}`)
-        .then(r => { if (!r.ok) throw new Error("标注文件获取失败"); return parser(r); })
+        .then(r => {
+          if (!r.ok) throw new Error("标注文件获取失败");
+          return r.text().then(text => {
+            // ✅ 打印文件大小用于调试
+            console.log(`📄 文件大小: ${text.length} 字节, 前100字符: ${text.substring(0, 100)}`);
+            // 用 Blob 重新构造 Response 给 parser 使用
+            const blob = new Blob([text], { type: realFmt === 'json' ? 'application/json' : 'text/plain' });
+            const newRes = new Response(blob);
+            return parser(newRes);
+          });
+        })
         .then(data => {
-          currentImage.objects = data.objs || [];
+          const rawObjs = data.objs || [];
+          console.log(`📦 loadAnnotation [${imgName}]: 解析到 ${rawObjs.length} 个对象`);
+
+          // ✅ 安全防护：限制最大对象数，防止异常文件导致页面崩溃
+          if (rawObjs.length > 5000) {
+            console.error(`⚠️ 标注文件包含 ${rawObjs.length} 个对象，超过安全上限，已截断`);
+            rawObjs.length = 5000;
+          }
+
+          currentImage.objects = rawObjs.map(obj => {
+            if (!obj.label || typeof obj.label !== 'string' || obj.label === 'undefined' || obj.label === 'null') {
+              obj.label = 'unlabeled';
+            }
+            if (!obj.labelColor) obj.labelColor = '#FF0000';
+            return obj;
+          });
           callback?.();
           updateMarkedLabels();
         });
     })
     .catch(err => {
-      console.warn("加载标注失败：", err.message);
+      console.error("加载标注失败：", imgName, err.message, err.stack);
+      // 加载失败时确保不残留脏数据
       currentImage.objects = [];
       callback?.();
       updateMarkedLabels();
@@ -388,35 +441,6 @@ function clearCanvas() {
 //             绘制所有标注框对象              //
 ///////////////////////////////////////////////
 
-// ✅ 画矩形，支持虚线（质检不合格用）
-function drawRectQC(x, y, w, h, color, dashed = false) {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.setLineDash(dashed ? [6, 4] : []); // 不合格用虚线
-  ctx.strokeRect(x, y, w, h);
-  ctx.setLineDash([]); // 画完恢复
-}
-
-// ✅ 画多边形，支持虚线
-function drawPolygonWithQC(points, color = 'lime', dashed = false) {
-  if (points.length < 2) return;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.setLineDash(dashed ? [6, 4] : []);
-  ctx.beginPath();
-  points.forEach(([x, y], i) => {
-    const [cx, cy] = imageXYtoCanvasXY(currentImage, x, y);
-    if (i === 0) ctx.moveTo(cx, cy);
-    else ctx.lineTo(cx, cy);
-  });
-  const [firstX, firstY] = imageXYtoCanvasXY(currentImage, points[0][0], points[0][1]);
-  ctx.lineTo(firstX, firstY);
-  ctx.closePath();
-  ctx.stroke();
-  ctx.setLineDash([]);
-}
-
-
 function drawAllObjects(img) {
   // ✅ 先分两类
   const normalBoxes = [];
@@ -445,6 +469,9 @@ function drawAllObjects(img) {
 // 单独封装绘制一个框（矩形/多边形）
 function drawSingleObject(obj, img) {
   let boxColor = obj.error_note ? "green" : (obj.labelColor || "#FF0000");
+  // ✅ 安全获取 label，防止 undefined/null 显示为文本
+  const safeLabel = (obj.label && typeof obj.label === 'string' && obj.label !== 'undefined' && obj.label !== 'null')
+    ? obj.label : 'unlabeled';
 
   if (obj.shape_type === "polygon") {
     drawPolygon(obj.points, boxColor);
@@ -452,13 +479,13 @@ function drawSingleObject(obj, img) {
     const cy = obj.points.reduce((sum, p) => sum + p[1], 0) / obj.points.length;
     const [ccx, ccy] = imageXYtoCanvasXY(currentImage, cx, cy);
     ctx.fillStyle = boxColor;
-    ctx.fillText(obj.label, ccx + 4, ccy);
+    ctx.fillText(safeLabel, ccx + 4, ccy);
   } else {
     const [x1, y1] = imageXYtoCanvasXY(img, obj.xmin, obj.ymin);
     const [x2, y2] = imageXYtoCanvasXY(img, obj.xmax, obj.ymax);
     drawRect(x1, y1, x2 - x1, y2 - y1, boxColor);
     ctx.fillStyle = boxColor;
-    ctx.fillText(obj.label, x1 + 4, y1 + 16);
+    ctx.fillText(safeLabel, x1 + 4, y1 + 16);
   }
 }
 
@@ -495,15 +522,6 @@ function drawRect(x, y, w, h, color = 'red') {
 ///////////////////////////////////////////////
 //             鼠标事件：框选绘制              //
 ///////////////////////////////////////////////
-function selectBox(index) {
-    const selected = currentImage.objects[index];
-    currentImage.objects.splice(index, 1);
-    currentImage.objects.push(selected);
-    selectedBoxIndex = currentImage.objects.length - 1;
-    renderImage(currentImage);
-    drawHighlightBox(selected);
-}
-
 canvas.onmousedown = function (e) {
   if (isPanning) return;
   if (e.button !== 0) return;
@@ -632,7 +650,7 @@ canvas.onmousemove = function (e) {
   if (isDrawing) {
     const limitedX = Math.max(currentImage.canx, Math.min(x, currentImage.canx + currentImage.canw));
     const limitedY = Math.max(currentImage.cany, Math.min(y, currentImage.cany + currentImage.canh));
-    p2 = { x: limitedX, y: limitedY };
+    const p2 = { x: limitedX, y: limitedY };
 
     currentBox.x = Math.min(p1.x, p2.x);
     currentBox.y = Math.min(p1.y, p2.y);
@@ -657,27 +675,11 @@ canvas.onmouseup = function (e) {
 
   // 结束绘制矩形框
   if (isDrawing) {
-    isDrawing = false;
-    if (currentBox && currentBox.w > 0 && currentBox.h > 0) {
-      const [xmin, ymin] = canvasXYtoImageXY(currentImage, currentBox.x, currentBox.y);
-      const [xmax, ymax] = canvasXYtoImageXY(currentImage, currentBox.x + currentBox.w, currentBox.y + currentBox.h);
-
-      currentBox.xmin = xmin;
-      currentBox.ymin = ymin;
-      currentBox.xmax = xmax;
-      currentBox.ymax = ymax;
-
-      currentImage.objects.push({ ...currentBox });
-      historyStack.push({ type: "add", obj: { ...currentBox } });
-
-      resetCurrentObj();
-      renderImage(currentImage);
-      updateMarkedLabels();
-      isModified = true;
-    }
+    endDrawingAndPushBox();
   }
 };
 
+// ✅ 完成当前绘制中的矩形框并推入对象列表（统一入口，onmouseup 和 forceSaveThen 共用）
 function endDrawingAndPushBox() {
   isDrawing = false;
   if (currentBox && currentBox.w > 0 && currentBox.h > 0) {
@@ -687,6 +689,15 @@ function endDrawingAndPushBox() {
     currentBox.ymin = ymin;
     currentBox.xmax = xmax;
     currentBox.ymax = ymax;
+
+    // ✅ 强制保证 label 有效
+    if (!currentBox.label || typeof currentBox.label !== 'string' || currentBox.label === 'undefined') {
+      const checkedInput = document.querySelector('input[name="label"]:checked');
+      currentBox.label = (checkedInput && checkedInput.value) ? checkedInput.value : 'unlabeled';
+    }
+    if (!currentBox.labelColor) currentBox.labelColor = '#FF0000';
+    currentBox.shape_type = 'rectangle';
+
     currentImage.objects.push({ ...currentBox });
     historyStack.push({ type: "add", obj: { ...currentBox } });
     resetCurrentObj();
@@ -702,9 +713,15 @@ canvas.ondblclick = function(e) {
 
   // 先处理多边形闭合逻辑
   if (drawMode === "poly" && isDrawingPoly && polyTempPoints.length >= 3) {
+    // ✅ 强制保证 label 有效
+    let polyLabel = currentBox.label;
+    if (!polyLabel || typeof polyLabel !== 'string' || polyLabel === 'undefined') {
+      const checkedInput = document.querySelector('input[name="label"]:checked');
+      polyLabel = (checkedInput && checkedInput.value) ? checkedInput.value : 'unlabeled';
+    }
     const newPoly = {
-      label: currentBox.label,
-      labelColor: currentBox.labelColor,
+      label: polyLabel,
+      labelColor: currentBox.labelColor || '#FF0000',
       shape_type: "polygon",
       points: [...polyTempPoints],
       error_note: ""  // 默认无错误
@@ -746,7 +763,8 @@ canvas.ondblclick = function(e) {
 function drawLabelOnRect(box) {
     ctx.fillStyle = box.labelColor || '#FF0000';
     ctx.font = "14px sans-serif";
-    ctx.fillText(box.label, box.x + 4, box.y + 16);
+    const label = (box.label && typeof box.label === 'string' && box.label !== 'undefined' && box.label !== 'null') ? box.label : 'unlabeled';
+    ctx.fillText(label, box.x + 4, box.y + 16);
 }
 
 ///////////////////////////////////////////////
@@ -773,24 +791,6 @@ function hitTestFull(x, y) {
   if (matches.length === 0) return -1;
   matches.sort((a, b) => a.area - b.area);
   return matches[0].index;
-}
-
-function hitTest(x, y) {
-  const borderThreshold = 5;
-  for (let i = 0; i < currentImage.objects.length; i++) {
-    const obj = currentImage.objects[i];
-    const [cx1, cy1] = imageXYtoCanvasXY(currentImage, obj.xmin, obj.ymin);
-    const [cx2, cy2] = imageXYtoCanvasXY(currentImage, obj.xmax, obj.ymax);
-    const inside = (x >= cx1 && x <= cx2 && y >= cy1 && y <= cy2);
-    const nearLeft = Math.abs(x - cx1) <= borderThreshold;
-    const nearRight = Math.abs(x - cx2) <= borderThreshold;
-    const nearTop = Math.abs(y - cy1) <= borderThreshold;
-    const nearBottom = Math.abs(y - cy2) <= borderThreshold;
-    if (inside && (nearLeft || nearRight || nearTop || nearBottom)) {
-      return i;
-    }
-  }
-  return -1;
 }
 
 function drawHighlightBox(obj) {
@@ -895,52 +895,69 @@ function checkHandleHit(obj, x, y) {
 ///////////////////////////////////////////////
 // 保存标注框数据到后端（加入 ann_filename 覆盖同一文件）
 function saveAnnotation(onSuccess, onFail) {
+  // ✅ 快照保存时的关键状态，防止异步回调中状态已被其他操作改变
+  const snapshotName = currentImage.name;
+  const snapshotAnnFilename = currentImage.annFilename;
+  const snapshotObjects = currentImage.objects.map(o => ({ ...o }));
+
   const data = {
-    imgName: currentImage.name,         // 当前图片名
-    objs: currentImage.objects.map(o => {
+    imgName: snapshotName,
+    objs: snapshotObjects.map(o => {
+      // ✅ 强制保证 label 字段存在且为有效字符串
+      let safeLabel = o.label;
+      if (safeLabel === undefined || safeLabel === null || typeof safeLabel !== 'string' || safeLabel === '') {
+        safeLabel = 'unlabeled';
+      }
       // 序列化成后端需要的格式（矩形/多边形都兼容）
       let base = {};
       if (o.shape_type === "polygon") {
         base = {
-          label: o.label,
-          labelColor: o.labelColor,
+          label: safeLabel,
+          labelColor: o.labelColor || '#FF0000',
           shape_type: "polygon",
-          points: o.points.map(([x, y]) => [parseFloat(x), parseFloat(y)])
+          points: o.points.map(([x, y]) => [parseFloat(x) || 0, parseFloat(y) || 0])
         };
       } else {
         base = {
-          label: o.label,
-          xmin: parseFloat(o.xmin),
-          xmax: parseFloat(o.xmax),
-          ymin: parseFloat(o.ymin),
-          ymax: parseFloat(o.ymax),
-          shape_type: "rectangle"
+          label: safeLabel,
+          xmin: parseFloat(o.xmin) || 0,
+          xmax: parseFloat(o.xmax) || 0,
+          ymin: parseFloat(o.ymin) || 0,
+          ymax: parseFloat(o.ymax) || 0,
+          shape_type: "rectangle",
+          labelColor: o.labelColor || '#FF0000'
         };
       }
       if (o.error_note) base.error_note = o.error_note; // 质检备注透传
       return base;
     }),
-    task_name: taskName,                 // 任务名（后端按它定位目录）
-    format: saveFormat,                  // 期望格式（后端也会根据文件实际格式选择）
-    ann_filename: currentImage.annFilename || null // 关键：让后端覆盖“解析到的同一份文件”
+    task_name: taskName,
+    format: saveFormat,
+    ann_filename: snapshotAnnFilename || null
   };
+
+  console.log('💾 saveAnnotation:', data.imgName, 'objects:', data.objs.length);
 
   fetch("/label/save_annotation/", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-CSRFToken": csrftoken
+      "X-CSRFToken": getCookie("csrftoken")
     },
     body: JSON.stringify(data)
   })
   .then(res => res.json())
   .then(res => {
     if (res.status === "success") {
-      // 服务端会回传最终写入的文件名，回写到内存，确保后续继续覆盖它
-      if (res.filename) currentImage.annFilename = res.filename;
-      console.log("✅ 保存成功：" + currentImage.name, "->", currentImage.annFilename);
-      isModified = false;
-      onSuccess?.();
+      console.log("✅ 保存成功：" + snapshotName, "->", res.filename);
+      // ✅ 关键：只在"仍在同一张图"时才更新状态和调用回调
+      if (currentImage.name === snapshotName) {
+        currentImage.annFilename = res.filename;
+        isModified = false;
+        onSuccess?.();
+      }
+      // 如果已切图：不更新 annFilename/isModified，避免污染新图的状态
+      // 数据已正确保存到磁盘，下次加载此图时会正确读取
     } else {
       alert("保存失败：" + res.message);
       onFail?.();
@@ -1025,11 +1042,7 @@ document.addEventListener("keydown", function (event) {
     } else if (key === "d") {
         document.getElementById("nextIm").click();
     } else if (key === "s") {
-        saveAnnotation(() => {
-            forceSaveThen(() => {
-                showSaveNotice();
-            });
-        });
+        saveAnnotation(() => showSaveNotice());
     }
 
     // 删除选中框
@@ -1127,7 +1140,12 @@ function updateMarkedLabels() {
   const labelCount = {};
 
   currentImage.objects.forEach((obj, index) => {
-    const label = obj.label;
+    // ✅ 强制校验 label，防止 "undefined"/"null" 字符串或 JS undefined
+    let label = obj.label;
+    if (!label || typeof label !== 'string' || label === 'undefined' || label === 'null' || label === '') {
+      label = 'unlabeled';
+      obj.label = 'unlabeled';  // 修复原对象
+    }
     if (!labelCount[label]) labelCount[label] = 1;
     else labelCount[label] += 1;
     let displayLabel = `${label}${labelCount[label]}`;
@@ -1301,10 +1319,13 @@ document.addEventListener("DOMContentLoaded", function () {
   const labelForm = document.getElementById("labelForm");
 
   // ✅ 初始 labels（后端传入）
-  const originalLabels = labels.slice();
+  const originalLabels = Array.isArray(labels) ? labels.slice() : [];
 
   // ✅ 优先用 localStorage
-  let storedLabels = JSON.parse(localStorage.getItem("customLabels")) || labels.slice();
+  let storedLabels = JSON.parse(localStorage.getItem("customLabels") || "[]");
+  if (!Array.isArray(storedLabels) || storedLabels.length === 0) {
+    storedLabels = Array.isArray(labels) ? labels.slice() : [];
+  }
 
   // ✅ 渲染函数
   function renderLabels() {

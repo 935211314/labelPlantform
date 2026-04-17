@@ -1,52 +1,197 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>平台首页</title>
-  <link rel="stylesheet" href="{% static 'user/css/home.css' %}">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>首页 - 标注平台</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'user/css/home.css' %}">
 </head>
 <body>
-  <!-- 顶部导航栏 -->
-  <div class="navbar">
-    <div class="navbar-left">
-      <span class="welcome-text">欢迎，{{ username }}！</span>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">L</div>
+                <span class="sidebar-brand">标注平台</span>
+            </div>
 
-      {% if request.user.is_superuser %}
-        <a class="nav-btn" href="{% url 'upload_task_package' %}">上传任务包</a>
-        <a class="nav-btn" href="{% url 'manage_packages' %}">管理任务包</a>
-        <a class="nav-btn" href="{% url 'manage_organizations' %}">管理组织</a>
-          <a class="nav-btn" href="{% url 'client_manage' %}">甲方管理</a>
-      {% else %}
-        {% if 'annotator' in user_roles %}
-          <a class="nav-btn" href="{% url 'available_packages' %}">可领取任务包</a>
-          <a class="nav-btn" href="{% url 'my_task_package' %}">我的任务包</a>
-        {% endif %}
-        {% if 'reviewer' in user_roles %}
-          <a class="nav-btn" href="{% url 'available_qc_packages' %}">质检任务包</a>
-        {% endif %}
-      {% endif %}
+            <div class="sidebar-user">
+                <div class="user-avatar">{{ username|make_list|first|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ username }}</div>
+                    <div class="user-role">
+                        {% if request.user.is_superuser %}平台管理员
+                        {% elif request.user.is_client %}甲方账号
+                        {% elif is_org_admin %}组织管理员
+                        {% else %}组织成员{% endif %}
+                    </div>
+                </div>
+            </div>
 
-      {% if is_org_admin %}
-        <a class="nav-btn" href="{% url 'review_requests' %}">审核加入请求</a>
-        <a class="nav-btn" href="{% url 'manage_members' %}">组织成员管理</a>
-      {% endif %}
-        {% if request.user.is_client %}
-          <a class="nav-btn" href="{% url 'client_tasks' %}">查看任务包</a>
-        {% endif %}
+            <nav class="sidebar-nav">
+                {% if request.user.is_superuser %}
+                    <div class="nav-section-title">任务管理</div>
+                    <a href="{% url 'upload_task_package' %}" class="nav-link">
+                        <span class="nav-icon">&#x1F4E6;</span> 上传任务包
+                    </a>
+                    <a href="{% url 'manage_packages' %}" class="nav-link">
+                        <span class="nav-icon">&#x1F4CB;</span> 管理任务包
+                    </a>
+
+                    <div class="nav-section-title">组织管理</div>
+                    <a href="{% url 'manage_organizations' %}" class="nav-link">
+                        <span class="nav-icon">&#x1F3E2;</span> 管理组织
+                    </a>
+                    <a href="{% url 'client_manage' %}" class="nav-link">
+                        <span class="nav-icon">&#x1F465;</span> 甲方管理
+                    </a>
+
+                {% else %}
+                    {% if 'annotator' in user_roles %}
+                        <div class="nav-section-title">标注工作</div>
+                        <a href="{% url 'available_packages' %}" class="nav-link">
+                            <span class="nav-icon">&#x1F4E5;</span> 可领取任务包
+                        </a>
+                        <a href="{% url 'my_task_package' %}" class="nav-link">
+                            <span class="nav-icon">&#x1F4DD;</span> 我的任务包
+                        </a>
+                    {% endif %}
+
+                    {% if 'reviewer' in user_roles %}
+                        <div class="nav-section-title">质检工作</div>
+                        <a href="{% url 'available_qc_packages' %}" class="nav-link">
+                            <span class="nav-icon">&#x1F50D;</span> 质检任务包
+                        </a>
+                    {% endif %}
+                {% endif %}
+
+                {% if is_org_admin %}
+                    <div class="nav-section-title">组织管理</div>
+                    <a href="{% url 'review_requests' %}" class="nav-link">
+                        <span class="nav-icon">&#x2705;</span> 审核申请
+                    </a>
+                    <a href="{% url 'manage_members' %}" class="nav-link">
+                        <span class="nav-icon">&#x1F464;</span> 成员管理
+                    </a>
+                {% endif %}
+
+                {% if request.user.is_client %}
+                    <div class="nav-section-title">我的工作</div>
+                    <a href="{% url 'client_tasks' %}" class="nav-link">
+                        <span class="nav-icon">&#x1F4C1;</span> 查看任务包
+                    </a>
+                {% endif %}
+            </nav>
+
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="logout-btn">
+                        <span>&#x21A9;</span> 退出登录
+                    </button>
+                </form>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <h1 class="topbar-title">工作台</h1>
+                    <span class="topbar-breadcrumb">欢迎回来，{{ username }}</span>
+                </div>
+            </header>
+
+            <div class="app-content">
+                {% if messages %}
+                    {% for msg in messages %}
+                    <div class="alert alert-{{ msg.tags|default:'info' }}">
+                        {{ msg }}
+                    </div>
+                    {% endfor %}
+                {% endif %}
+
+                <div class="stats-grid">
+                    {% if request.user.is_superuser %}
+                        <div class="stat-card">
+                            <div class="stat-icon blue">&#x1F4E6;</div>
+                            <div class="stat-label">任务管理</div>
+                            <div class="stat-value">
+                                <a href="{% url 'upload_task_package' %}">上传任务</a>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon green">&#x1F4CB;</div>
+                            <div class="stat-label">全部任务包</div>
+                            <div class="stat-value">
+                                <a href="{% url 'manage_packages' %}">查看详情</a>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon orange">&#x1F3E2;</div>
+                            <div class="stat-label">组织管理</div>
+                            <div class="stat-value">
+                                <a href="{% url 'manage_organizations' %}">管理</a>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon red">&#x1F465;</div>
+                            <div class="stat-label">甲方管理</div>
+                            <div class="stat-value">
+                                <a href="{% url 'client_manage' %}">管理</a>
+                            </div>
+                        </div>
+
+                    {% elif request.user.is_client %}
+                        <div class="stat-card">
+                            <div class="stat-icon blue">&#x1F4C1;</div>
+                            <div class="stat-label">我的任务包</div>
+                            <div class="stat-value">
+                                <a href="{% url 'client_tasks' %}">查看</a>
+                            </div>
+                        </div>
+
+                    {% else %}
+                        {% if 'annotator' in user_roles %}
+                            <div class="stat-card">
+                                <div class="stat-icon blue">&#x1F4E5;</div>
+                                <div class="stat-label">可领取任务</div>
+                                <div class="stat-value">
+                                    <a href="{% url 'available_packages' %}">领取</a>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon green">&#x1F4DD;</div>
+                                <div class="stat-label">我的任务</div>
+                                <div class="stat-value">
+                                    <a href="{% url 'my_task_package' %}">查看</a>
+                                </div>
+                            </div>
+                        {% endif %}
+
+                        {% if 'reviewer' in user_roles %}
+                            <div class="stat-card">
+                                <div class="stat-icon orange">&#x1F50D;</div>
+                                <div class="stat-label">质检任务</div>
+                                <div class="stat-value">
+                                    <a href="{% url 'available_qc_packages' %}">查看</a>
+                                </div>
+                            </div>
+                        {% endif %}
+
+                        {% if 'annotator' not in user_roles and 'reviewer' not in user_roles %}
+                            <div class="empty-state">
+                                <div class="empty-state-icon">&#x26A0;</div>
+                                <div class="empty-state-text">您暂无标注或质检权限</div>
+                                <div class="empty-state-sub">请联系组织管理员分配角色</div>
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </main>
     </div>
-
-    <!-- 右侧退出按钮 -->
-    <form method="post" action="{% url 'logout' %}">
-      {% csrf_token %}
-      <button type="submit" class="logout-btn">退出登录</button>
-    </form>
-  </div>
-
-  <!-- 主体内容 -->
-  <div class="main-content">
-    <h2 class="page-title">这是平台首页</h2>
-    <p class="sub-text">根据你的权限展示功能</p>
-  </div>
 </body>
 </html>

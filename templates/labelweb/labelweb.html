@@ -19,84 +19,7 @@
     window.extraLabels = JSON.parse('{{ extra_labels|default:"[]"|escapejs }}');
   </script>
 
-  <!-- ✅ 样式 -->
   <link rel="stylesheet" href="{% static 'labelweb/css/labelweb.css' %}" />
-  <style>
-    /* ✅ 批量操作工具栏样式 */
-    #batchTools {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 8px;
-      gap: 8px;
-    }
-    #batchTools button {
-      flex: 1;
-      padding: 6px;
-      font-size: 13px;
-      border-radius: 6px;
-      cursor: pointer;
-      border: 1px solid #ccc;
-      background: #fff;
-      transition: 0.2s;
-    }
-    #batchTools button:disabled {
-      background: #f5f5f5;
-      color: #aaa;
-      cursor: not-allowed;
-    }
-    #batchTools button:hover:enabled {
-      background: #e6f7ff;
-      border-color: #91d5ff;
-      color: #0056b3;
-    }
-
-    /* ✅ 弹窗 */
-    .batch-modal {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: #fff;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-      z-index: 3000;
-      min-width: 260px;
-    }
-    .batch-modal h3 {
-      margin-top: 0;
-      font-size: 16px;
-      text-align: center;
-      margin-bottom: 10px;
-    }
-    .batch-modal input {
-      width: 90%;
-      padding: 6px;
-      font-size: 14px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      margin-bottom: 10px;
-    }
-    .batch-modal .modal-actions {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-    }
-    .batch-modal button {
-      padding: 6px 12px;
-      border-radius: 4px;
-      border: none;
-      cursor: pointer;
-    }
-    .modal-ok {
-      background: #28a745;
-      color: #fff;
-    }
-    .modal-cancel {
-      background: #6c757d;
-      color: #fff;
-    }
-  </style>
 </head>
 <body>
   <!-- ✅ 顶部工具栏 -->
@@ -138,16 +61,14 @@
       <h1>类别</h1>
       <form class="Label" id="labelForm"></form>
       <button id="addLabelBtn">+ 添加类别</button>
-      <button id="resetLabelBtn" style="margin-top:8px;background:#f44336;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;">
-        🔄 重置类别
-      </button>
+      <button id="resetLabelBtn">&#x21BB; 重置类别</button>
 
       <div id="markedList">
         <!-- ✅ 批量工具栏 -->
     <div id="batchTools">
       <button id="batchRenameBtn" class="batch-btn" disabled>批量修改名称</button>
       <button id="batchAlignBtn" class="batch-btn" disabled>批量对齐位置</button>
-      <button id="batchSortBtn" class="batch-btn sort-btn">🔄 标签排序</button>
+      <button id="batchSortBtn" class="batch-btn sort-btn">&#x1F504; 标签排序</button>
     </div>
 
 
@@ -160,7 +81,7 @@
   <!-- ✅ 使用说明弹框 -->
   <div class="modal-overlay" id="helpModal">
     <div class="modal-box">
-      <h2>📖 使用说明</h2>
+      <h2>&#x1F4D6; 使用说明</h2>
       <p>欢迎使用图像标注工具，以下是主要操作和快捷键：</p>
       <ul>
         <li><b>鼠标左键拖动：</b>绘制新的标注框</li>
@@ -177,18 +98,15 @@
       <div class="modal-close" id="closeHelp">关闭</div>
     </div>
       <!-- 错误标注说明弹窗 -->
-    <div id="errorNoteModal" class="modal" style="display:none; position: fixed; z-index: 999; left: 0; top: 0; width: 100%; height: 100%;
-         background: rgba(0,0,0,0.5); text-align: center;">
-      <div class="modal-content" style="background: #fff; margin: 10% auto; padding: 20px; width: 300px; border-radius: 4px; text-align:left;">
-        <!-- 关闭按钮 -->
+    <div id="errorNoteModal" class="modal-overlay" style="display:none;">
+      <div class="modal-box">
         <span id="errorNoteClose" class="close" style="float:right; font-size:20px; cursor:pointer;">&times;</span>
-        <h3>错误标注说明</h3>
-        <!-- 文本域，用于输入或显示错误说明 -->
-        <textarea id="errorNoteText" rows="4" style="width: 100%;"></textarea>
-        <br/>
-        <!-- 保存和取消按钮 -->
-        <button id="errorNoteSaveBtn" style="margin-top:5px;">保存</button>
-        <button id="errorNoteCancelBtn" style="margin-top:5px;">取消</button>
+        <h2>错误标注说明</h2>
+        <textarea id="errorNoteText" rows="4" style="width:100%;"></textarea>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button id="errorNoteSaveBtn">保存</button>
+          <button id="errorNoteCancelBtn">取消</button>
+        </div>
       </div>
     </div>
 

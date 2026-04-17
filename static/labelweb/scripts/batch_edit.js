@@ -118,6 +118,7 @@ document.addEventListener("DOMContentLoaded", () => {
       isModified = true;
 
       saveAnnotation(() => {
+        renderImage(currentImage);  // ✅ 重绘 canvas 更新标签文字
         updateMarkedLabels(); // 刷新 UI
       });
       modal.remove();

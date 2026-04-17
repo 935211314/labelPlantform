@@ -1,0 +1,145 @@
+<div class="table-wrapper" style="border:none;border-radius:0;box-shadow:none;">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>名称</th>
+                <th>上传人</th>
+                <th>上传时间</th>
+                <th>当前组织</th>
+                <th>标注人</th>
+                <th>标注状态</th>
+                <th>质检人</th>
+                <th>质检状态</th>
+                <th>质检完成时间</th>
+                <th>甲方审核</th>
+                <th>完成量</th>
+                <th>查看</th>
+                <th>操作</th>
+            </tr>
+            <!-- Filter row -->
+            <tr class="filter-row">
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>
+                    <select name="org" id="filter-org">
+                        <option value="">全部</option>
+                        {% for org in organizations %}
+                            <option value="{{ org.id }}" {% if org.id|stringformat:"s" == request.GET.org %}selected{% endif %}>
+                                {{ org.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </td>
+                <td></td>
+                <td>
+                    <select name="annotation_status" id="filter-annotation">
+                        <option value="">全部</option>
+                        <option value="未开始" {% if request.GET.annotation_status == "未开始" %}selected{% endif %}>未开始</option>
+                        <option value="进行中" {% if request.GET.annotation_status == "进行中" %}selected{% endif %}>进行中</option>
+                        <option value="已完成" {% if request.GET.annotation_status == "已完成" %}selected{% endif %}>已完成</option>
+                    </select>
+                </td>
+                <td></td>
+                <td>
+                    <select name="qc_status" id="filter-qc">
+                        <option value="">全部</option>
+                        <option value="未开始" {% if request.GET.qc_status == "未开始" %}selected{% endif %}>未开始</option>
+                        <option value="质检中" {% if request.GET.qc_status == "质检中" %}selected{% endif %}>质检中</option>
+                        <option value="合格" {% if request.GET.qc_status == "合格" %}selected{% endif %}>合格</option>
+                        <option value="不合格" {% if request.GET.qc_status == "不合格" %}selected{% endif %}>不合格</option>
+                    </select>
+                </td>
+                <td></td>
+                <td>
+                    <select name="client_status" id="filter-client">
+                        <option value="">全部</option>
+                        <option value="未开始" {% if request.GET.client_status == "未开始" %}selected{% endif %}>未开始</option>
+                        <option value="通过" {% if request.GET.client_status == "通过" %}selected{% endif %}>通过</option>
+                        <option value="未通过" {% if request.GET.client_status == "未通过" %}selected{% endif %}>未通过</option>
+                    </select>
+                </td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pkg in packages %}
+            <tr>
+                <td><strong>{{ pkg.name }}</strong></td>
+                <td>{{ pkg.created_by.username }}</td>
+                <td>{{ pkg.created_at|date:"Y-m-d H:i" }}</td>
+                <td>
+                    {% if pkg.allowed_organization %}
+                        <span class="badge badge-info">{{ pkg.allowed_organization.name }}</span>
+                    {% else %}
+                        <span class="badge badge-neutral">未分配</span>
+                    {% endif %}
+                </td>
+                <td>{{ pkg.annotator }}</td>
+                <td>
+                    {% if pkg.annotation_status == '已完成' %}
+                        <span class="badge badge-success">{{ pkg.annotation_status }}</span>
+                    {% elif pkg.annotation_status == '进行中' %}
+                        <span class="badge badge-warning">{{ pkg.annotation_status }}</span>
+                    {% else %}
+                        <span class="badge badge-neutral">{{ pkg.annotation_status }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ pkg.qc_user }}</td>
+                <td>
+                    {% if pkg.qc_status_display == '合格' %}
+                        <span class="badge badge-success">{{ pkg.qc_status_display }}</span>
+                    {% elif pkg.qc_status_display == '不合格' %}
+                        <span class="badge badge-danger">{{ pkg.qc_status_display }}</span>
+                    {% elif pkg.qc_status_display == '质检中' %}
+                        <span class="badge badge-warning">{{ pkg.qc_status_display }}</span>
+                    {% else %}
+                        <span class="badge badge-neutral">{{ pkg.qc_status_display }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ pkg.qc_finished_time }}</td>
+                <td>
+                    {% if pkg.client_review_status_display == '通过' %}
+                        <span class="badge badge-success">{{ pkg.client_review_status_display }}</span>
+                    {% elif pkg.client_review_status_display == '未通过' %}
+                        <span class="badge badge-danger">{{ pkg.client_review_status_display }}</span>
+                    {% else %}
+                        <span class="badge badge-neutral">{{ pkg.client_review_status_display }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span style="font-weight:600;">{{ pkg.progress_text }}</span>
+                </td>
+                <td>
+                    {% if pkg.annotation_status != '未开始' %}
+                        <a href="{% url 'label_interface' pkg.id %}" class="btn btn-outline btn-sm">查看</a>
+                    {% else %}
+                        <span class="badge badge-neutral">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div style="display:flex;flex-direction:column;gap:6px;">
+                        <a href="{% url 'download_package' pkg.id %}" class="btn btn-success btn-sm">下载</a>
+                        <form method="post" style="display:flex;gap:6px;align-items:center;">
+                            {% csrf_token %}
+                            <input type="hidden" name="package_id" value="{{ pkg.id }}">
+                            <select name="organization_id" class="form-control" style="width:auto;min-width:120px;">
+                                <option value="">-- 未分配 --</option>
+                                {% for org in organizations %}
+                                    <option value="{{ org.id }}" {% if pkg.allowed_organization and pkg.allowed_organization.id == org.id %}selected{% endif %}>
+                                        {{ org.name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="btn btn-primary btn-sm">更新</button>
+                        </form>
+                        <button onclick="deletePackage({{ pkg.id }}, '{{ pkg.name|escapejs }}')" class="btn btn-danger btn-sm">删除</button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

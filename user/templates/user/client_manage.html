@@ -1,57 +1,160 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>甲方账号管理</title>
-  <link rel="stylesheet" href="{% static 'label/css/client_manage.css' %}">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>甲方管理 - 标注平台</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'label/css/client_manage.css' %}">
 </head>
 <body>
-  <div class="container">
-    <h2 class="page-title">甲方账号管理</h2>
+    <div class="app-layout">
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">L</div>
+                <span class="sidebar-brand">标注平台</span>
+            </div>
+            <div class="sidebar-user">
+                <div class="user-avatar">{{ request.user.username|make_list|first|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ request.user.username }}</div>
+                    <div class="user-role">平台管理员</div>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">平台管理</div>
+                <a href="/" class="nav-link">
+                    <span class="nav-icon">&#x1F3E0;</span> 返回首页
+                </a>
+                <a href="{% url 'manage_organizations' %}" class="nav-link">
+                    <span class="nav-icon">&#x1F3E2;</span> 管理组织
+                </a>
+                <a href="{% url 'client_manage' %}" class="nav-link active">
+                    <span class="nav-icon">&#x1F465;</span> 甲方管理
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="logout-btn">
+                        <span>&#x21A9;</span> 退出登录
+                    </button>
+                </form>
+            </div>
+        </aside>
 
-    <!-- ✅ 创建甲方账号 -->
-    <div class="form-section">
-      <h3>创建甲方账号</h3>
-      <form method="post" class="create-form">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit" class="btn btn-primary">创建甲方账号</button>
-      </form>
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <h1 class="topbar-title">甲方账号管理</h1>
+                    <span class="topbar-breadcrumb">创建和管理甲方账号</span>
+                </div>
+                <a href="/" class="btn btn-ghost">返回首页</a>
+            </header>
+
+            <div class="app-content">
+                {% if messages %}
+                    {% for msg in messages %}
+                    <div class="alert alert-{{ msg.tags|default:'info' }}">{{ msg }}</div>
+                    {% endfor %}
+                {% endif %}
+
+                <!-- Create Client -->
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <h3 class="card-title">创建甲方账号</h3>
+                    </div>
+                    <div class="card-body">
+                        <form method="post" style="max-width:500px;">
+                            {% csrf_token %}
+                            {% for field in form %}
+                            <div class="form-group">
+                                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                <input type="{{ field.field.widget.input_type }}"
+                                       name="{{ field.name }}"
+                                       id="{{ field.id_for_label }}"
+                                       class="form-control"
+                                       {% if field.field.required %}required{% endif %}>
+                                {% if field.errors %}
+                                <div class="alert alert-danger" style="margin-top:8px;margin-bottom:0;">{{ field.errors.0 }}</div>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                            <button type="submit" class="btn btn-primary">创建甲方账号</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Client List -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">已有甲方账号</h3>
+                        <span class="badge badge-info">{{ clients|length }} 个账号</span>
+                    </div>
+                    <div class="card-body" style="padding:0;">
+                        {% if clients %}
+                        <div class="table-wrapper" style="border:none;border-radius:0;box-shadow:none;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>用户名</th>
+                                        <th>密码</th>
+                                        <th>上次登录</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for client in clients %}
+                                    <tr>
+                                        <td>
+                                            <div style="display:flex;align-items:center;gap:10px;">
+                                                <div class="user-avatar" style="width:32px;height:32px;font-size:13px;background:linear-gradient(135deg, var(--warning-500), var(--warning-600));">
+                                                    {{ client.username|make_list|first|upper }}
+                                                </div>
+                                                <strong>{{ client.username }}</strong>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <code style="background:var(--gray-100);padding:4px 10px;border-radius:4px;font-size:13px;">
+                                                {{ client.raw_password|default:"(无)" }}
+                                            </code>
+                                        </td>
+                                        <td>
+                                            {% if client.last_login %}
+                                                {{ client.last_login|date:"Y-m-d H:i" }}
+                                            {% else %}
+                                                <span class="badge badge-neutral">从未登录</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <a href="{% url 'assign_client_tasks' client.id %}" class="btn btn-primary btn-sm">
+                                                分配任务包
+                                            </a>
+                                            <form method="post" action="{% url 'delete_client' client.id %}" style="display:inline;">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-danger btn-sm"
+                                                        onclick="return confirm('确认删除甲方账号「{{ client.username }}」？该操作不可恢复！')">
+                                                    删除
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="empty-state">
+                            <div class="empty-state-icon">&#x1F465;</div>
+                            <div class="empty-state-text">暂无甲方账号</div>
+                            <div class="empty-state-sub">使用上方表单创建新的甲方账号</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
-
-    <hr>
-
-    <!-- ✅ 列出甲方账号 -->
-    <h3>已有甲方账号</h3>
-    <div class="table-wrapper">
-      <table class="pkg-table">
-        <thead>
-          <tr>
-            <th>用户名</th>
-            <th>密码</th>
-            <th>上次登录</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for client in clients %}
-            <tr>
-              <td>{{ client.username }}</td>
-              <td>{{ client.raw_password|default:"(无)" }}</td>
-              <td>{{ client.last_login|date:"Y-m-d H:i"|default:"从未登录" }}</td>
-              <td>
-                <a href="{% url 'assign_client_tasks' client.id %}" class="btn btn-secondary">分配任务包</a>
-              </td>
-            </tr>
-          {% empty %}
-            <tr>
-              <td colspan="4" class="no-data">暂无甲方账号</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
 </body>
 </html>

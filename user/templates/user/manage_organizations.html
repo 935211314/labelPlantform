@@ -1,57 +1,120 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>组织管理</title>
-  <link rel="stylesheet" href="{% static 'user/css/manage_organizations.css' %}">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>组织管理 - 标注平台</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'user/css/manage_organizations.css' %}">
 </head>
 <body>
-  <!-- 页面标题 -->
-  <h2 class="page-title">组织管理</h2>
+    <div class="app-layout">
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">L</div>
+                <span class="sidebar-brand">标注平台</span>
+            </div>
+            <div class="sidebar-user">
+                <div class="user-avatar">{{ request.user.username|make_list|first|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ request.user.username }}</div>
+                    <div class="user-role">平台管理员</div>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">平台管理</div>
+                <a href="/" class="nav-link">
+                    <span class="nav-icon">&#x1F3E0;</span> 返回首页
+                </a>
+                <a href="{% url 'manage_organizations' %}" class="nav-link active">
+                    <span class="nav-icon">&#x1F3E2;</span> 管理组织
+                </a>
+                <a href="{% url 'client_manage' %}" class="nav-link">
+                    <span class="nav-icon">&#x1F465;</span> 甲方管理
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="logout-btn">
+                        <span>&#x21A9;</span> 退出登录
+                    </button>
+                </form>
+            </div>
+        </aside>
 
-  <!-- 表格容器 -->
-  <div class="table-container">
-    <table class="org-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>组织名称</th>
-          <th>组织代码</th>
-          <th>创建时间</th>
-          <th>组织管理员</th>
-          <th>修改管理员</th>
-        </tr>
-      </thead>
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <h1 class="topbar-title">组织管理</h1>
+                    <span class="topbar-breadcrumb">管理系统中的所有组织</span>
+                </div>
+                <a href="/" class="btn btn-ghost">返回首页</a>
+            </header>
 
-      <tbody>
-        {% for item in org_info_list %}
-        <tr>
-          <td>{{ item.org.id }}</td>
-            <td>
-                <a href="{% url 'organization_detail' item.org.id %}" class="org-link">
-                {{ item.org.name }}
-                 </a>
-            </td>
-          <td>{{ item.org.code }}</td>
-          <td>{{ item.org.created_at|date:"Y-m-d H:i" }}</td>
-          <td>{{ item.current_admin.username|default:"暂无管理员" }}</td>
-          <td>
-            <form method="post" action="{% url 'change_org_admin' item.org.id %}" class="admin-form">
-              {% csrf_token %}
-              <select name="admin_user_id" class="select-box">
-                <option value="">请选择成员</option>
-                {% for member in item.members %}
-                  <option value="{{ member.id }}">{{ member.username }}</option>
-                {% endfor %}
-              </select>
-              <button type="submit" class="btn-primary">更新</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+            <div class="app-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">组织列表</h3>
+                        <span class="badge badge-info">{{ org_info_list|length }} 个组织</span>
+                    </div>
+                    <div class="card-body" style="padding:0;">
+                        <div class="table-wrapper" style="border:none;border-radius:0;box-shadow:none;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>组织名称</th>
+                                        <th>组织代码</th>
+                                        <th>创建时间</th>
+                                        <th>当前管理员</th>
+                                        <th>修改管理员</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in org_info_list %}
+                                    <tr>
+                                        <td>{{ item.org.id }}</td>
+                                        <td>
+                                            <a href="{% url 'organization_detail' item.org.id %}" class="org-link">
+                                                {{ item.org.name }}
+                                            </a>
+                                        </td>
+                                        <td><code style="background:var(--gray-100);padding:2px 8px;border-radius:4px;font-size:13px;">{{ item.org.code }}</code></td>
+                                        <td>{{ item.org.created_at|date:"Y-m-d H:i" }}</td>
+                                        <td>
+                                            {% if item.current_admin %}
+                                                <span class="badge badge-success">{{ item.current_admin.username }}</span>
+                                            {% else %}
+                                                <span class="badge badge-neutral">暂无</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <form method="post" action="{% url 'change_org_admin' item.org.id %}" style="display:flex;gap:8px;align-items:center;">
+                                                {% csrf_token %}
+                                                <select name="admin_user_id" class="form-control" style="width:auto;min-width:140px;">
+                                                    <option value="">请选择</option>
+                                                    {% for member in item.members %}
+                                                        <option value="{{ member.id }}">{{ member.username }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                                <button type="submit" class="btn btn-primary btn-sm">更新</button>
+                                            </form>
+                                        </td>
+                                        <td>
+                                            <a href="{% url 'organization_detail' item.org.id %}" class="btn btn-outline btn-sm">详情</a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
 </body>
 </html>

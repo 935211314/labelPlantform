@@ -1,0 +1,46 @@
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="分页导航">
+    <ul class="pagination-list">
+        {% if has_prev %}
+        <li>
+            <a href="?{{ prev_params }}" class="pagination-link pagination-prev" aria-label="上一页">
+                &#x2039; 上一页
+            </a>
+        </li>
+        {% else %}
+        <li>
+            <span class="pagination-link pagination-prev pagination-disabled">&#x2039; 上一页</span>
+        </li>
+        {% endif %}
+
+        {% for p in pages %}
+            {% if p.ellipsis %}
+            <li><span class="pagination-ellipsis">&#x2026;</span></li>
+            {% else %}
+            <li>
+                {% if p.is_current %}
+                <span class="pagination-link pagination-current" aria-current="page">{{ p.number }}</span>
+                {% else %}
+                <a href="?{{ p.query_string }}" class="pagination-link">{{ p.number }}</a>
+                {% endif %}
+            </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if has_next %}
+        <li>
+            <a href="?{{ next_params }}" class="pagination-link pagination-next" aria-label="下一页">
+                下一页 &#x203A;
+            </a>
+        </li>
+        {% else %}
+        <li>
+            <span class="pagination-link pagination-next pagination-disabled">下一页 &#x203A;</span>
+        </li>
+        {% endif %}
+    </ul>
+    <span class="pagination-info">
+        第 {{ page_obj.number }} / {{ total_pages }} 页，共 {{ page_obj.paginator.count }} 条
+    </span>
+</nav>
+{% endif %}

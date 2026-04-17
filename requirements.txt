@@ -3,3 +3,5 @@ psycopg2-binary
 Pillow
 django-axes
 python-decouple
+redis>=4.0
+django-redis>=5.0

@@ -28,25 +28,30 @@ def manage_organizations(request):
 
 class User(AbstractUser):
     is_platform_admin = models.BooleanField(default=False)
-    organization = models.ForeignKey(Organization, null=True, blank=True, on_delete=models.SET_NULL)
-    is_org_admin = models.BooleanField(default=False)
-    is_client = models.BooleanField(default=False)
-    raw_password = models.CharField(max_length=128, blank=True, null=True)  # ✅ 仅管理员查看
+    organization = models.ForeignKey(Organization, null=True, blank=True, on_delete=models.SET_NULL, db_index=True)
+    is_org_admin = models.BooleanField(default=False, db_index=True)
+    is_client = models.BooleanField(default=False, db_index=True)
 
 
 class ClientTaskAccess(models.Model):
     client = models.ForeignKey(
         'user.User',  # ✅ 用字符串引用，避免循环导入
         on_delete=models.CASCADE,
-        limit_choices_to={'is_client': True}
+        limit_choices_to={'is_client': True},
+        db_index=True,
     )
     task_package = models.ForeignKey(
         'label.TaskPackage',  # ✅ 用字符串引用，避免循环导入
-        on_delete=models.CASCADE
+        on_delete=models.CASCADE,
+        db_index=True,
     )
 
     class Meta:
         unique_together = ('client', 'task_package')
+        indexes = [
+            models.Index(fields=['client']),
+            models.Index(fields=['task_package']),
+        ]
 
     def __str__(self):
         return f"{self.client.username} → {self.task_package.name}"

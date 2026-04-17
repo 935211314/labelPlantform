@@ -1,56 +1,140 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>组织成员管理</title>
-  <link rel="stylesheet" href="{% static 'user/css/manage_members.css' %}">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>成员管理 - 标注平台</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'user/css/manage_members.css' %}">
 </head>
 <body>
-  <!-- 页面标题 -->
-  <h2 class="page-title">组织成员管理</h2>
+    <div class="app-layout">
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">L</div>
+                <span class="sidebar-brand">标注平台</span>
+            </div>
+            <div class="sidebar-user">
+                <div class="user-avatar">{{ request.user.username|make_list|first|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ request.user.username }}</div>
+                    <div class="user-role">组织管理员</div>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">组织管理</div>
+                <a href="/" class="nav-link">
+                    <span class="nav-icon">&#x1F3E0;</span> 返回首页
+                </a>
+                <a href="{% url 'review_requests' %}" class="nav-link">
+                    <span class="nav-icon">&#x2705;</span> 审核申请
+                </a>
+                <a href="{% url 'manage_members' %}" class="nav-link active">
+                    <span class="nav-icon">&#x1F464;</span> 成员管理
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="logout-btn">
+                        <span>&#x21A9;</span> 退出登录
+                    </button>
+                </form>
+            </div>
+        </aside>
 
-  <!-- 成员列表 -->
-  <div class="member-list">
-    {% for member in members %}
-      <div class="member-card">
-        <div class="member-info">
-          <strong class="member-name">{{ member.username }}</strong>
-        </div>
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <h1 class="topbar-title">组织成员管理</h1>
+                    <span class="topbar-breadcrumb">管理组织内的成员角色</span>
+                </div>
+                <a href="/" class="btn btn-ghost">返回首页</a>
+            </header>
 
-        <div class="member-actions">
-          {% if member.role_status == 'none' %}
-            <form method="post" action="{% url 'set_role' member.id %}">
-              {% csrf_token %}
-              <select name="role" class="role-select">
-                <option value="annotator">标注员</option>
-                <option value="reviewer">质检员</option>
-                <option value="both">标注员+质检员</option>
-              </select>
-              <button type="submit" class="btn-primary">确认</button>
-            </form>
-
-          {% elif member.role_status == 'annotator' %}
-            <form method="post" action="{% url 'toggle_role' member.id 'annotator' %}">
-              {% csrf_token %}
-              <button type="submit" class="btn-gray">标注员（点我变质检）</button>
-            </form>
-
-          {% elif member.role_status == 'reviewer' %}
-            <form method="post" action="{% url 'toggle_role' member.id 'reviewer' %}">
-              {% csrf_token %}
-              <button type="submit" class="btn-gray">质检员（点我变标注）</button>
-            </form>
-
-          {% elif member.role_status == 'both' %}
-            <form method="post" action="{% url 'toggle_role' member.id 'annotator' %}">
-              {% csrf_token %}
-              <button type="submit" class="btn-danger">标注员+质检员（点我清除）</button>
-            </form>
-          {% endif %}
-        </div>
-      </div>
-    {% endfor %}
-  </div>
+            <div class="app-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">成员列表</h3>
+                        <span class="badge badge-info">{{ members|length }} 位成员</span>
+                    </div>
+                    <div class="card-body" style="padding:0;">
+                        <div class="table-wrapper" style="border:none;border-radius:0;box-shadow:none;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>用户名</th>
+                                        <th>当前角色</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for member in members %}
+                                    <tr>
+                                        <td>
+                                            <div style="display:flex;align-items:center;gap:10px;">
+                                                <div class="user-avatar" style="width:32px;height:32px;font-size:13px;">
+                                                    {{ member.username|make_list|first|upper }}
+                                                </div>
+                                                <strong>{{ member.username }}</strong>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            {% if member.role_status == 'none' %}
+                                                <span class="badge badge-neutral">未分配角色</span>
+                                            {% elif member.role_status == 'annotator' %}
+                                                <span class="badge badge-info">标注员</span>
+                                            {% elif member.role_status == 'reviewer' %}
+                                                <span class="badge badge-warning">质检员</span>
+                                            {% elif member.role_status == 'both' %}
+                                                <span class="badge badge-info">标注员</span>
+                                                <span class="badge badge-warning">质检员</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if member.role_status == 'none' %}
+                                                <form method="post" action="{% url 'set_role' member.id %}" style="display:flex;gap:8px;align-items:center;">
+                                                    {% csrf_token %}
+                                                    <select name="role" class="form-control" style="width:auto;min-width:160px;">
+                                                        <option value="annotator">标注员</option>
+                                                        <option value="reviewer">质检员</option>
+                                                        <option value="both">标注员 + 质检员</option>
+                                                    </select>
+                                                    <button type="submit" class="btn btn-primary btn-sm">确认</button>
+                                                </form>
+                                            {% elif member.role_status == 'annotator' %}
+                                                <form method="post" action="{% url 'toggle_role' member.id 'annotator' %}">
+                                                    {% csrf_token %}
+                                                    <button type="submit" class="btn btn-outline btn-sm">
+                                                        切换为质检员
+                                                    </button>
+                                                </form>
+                                            {% elif member.role_status == 'reviewer' %}
+                                                <form method="post" action="{% url 'toggle_role' member.id 'reviewer' %}">
+                                                    {% csrf_token %}
+                                                    <button type="submit" class="btn btn-outline btn-sm">
+                                                        切换为标注员
+                                                    </button>
+                                                </form>
+                                            {% elif member.role_status == 'both' %}
+                                                <form method="post" action="{% url 'toggle_role' member.id 'annotator' %}">
+                                                    {% csrf_token %}
+                                                    <button type="submit" class="btn btn-danger btn-sm">
+                                                        清除所有角色
+                                                    </button>
+                                                </form>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
 </body>
 </html>

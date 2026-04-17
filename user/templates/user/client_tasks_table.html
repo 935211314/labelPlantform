@@ -1,0 +1,47 @@
+{% for task in tasks %}
+<tr>
+    <td><strong>{{ task.name }}</strong></td>
+    <td>{{ task.created_at|date:"Y-m-d H:i" }}</td>
+    <td>
+        {% if task.annotation_status_display == '已完成' %}
+            <span class="badge badge-success">已完成</span>
+        {% elif task.annotation_status_display == '进行中' %}
+            <span class="badge badge-warning">进行中</span>
+        {% else %}
+            <span class="badge badge-neutral">未开始</span>
+        {% endif %}
+    </td>
+    <td>
+        {% if task.qc_status_display == '合格' %}
+            <span class="badge badge-success">合格</span>
+        {% elif task.qc_status_display == '不合格' %}
+            <span class="badge badge-danger">不合格</span>
+        {% elif task.qc_status_display == '质检中' %}
+            <span class="badge badge-warning">质检中</span>
+        {% else %}
+            <span class="badge badge-neutral">未开始</span>
+        {% endif %}
+    </td>
+    <td>
+        {% if task.client_review_display == '通过' %}
+            <span class="badge badge-success">通过</span>
+        {% elif task.client_review_display == '未通过' %}
+            <span class="badge badge-danger">未通过</span>
+        {% else %}
+            <span class="badge badge-neutral">未开始</span>
+        {% endif %}
+    </td>
+    <td>
+        <a href="{% url 'client_view_task' task.id %}" class="btn btn-primary btn-sm">查看</a>
+    </td>
+</tr>
+{% empty %}
+<tr>
+    <td colspan="6">
+        <div class="empty-state" style="padding:40px 20px;">
+            <div class="empty-state-icon">&#x1F4C1;</div>
+            <div class="empty-state-text">暂无任务包</div>
+        </div>
+    </td>
+</tr>
+{% endfor %}

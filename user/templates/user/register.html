@@ -1,19 +1,56 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="utf-8">
-    <title>注册</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>注册 - 标注平台</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
     <link rel="stylesheet" href="{% static 'user/css/register.css' %}">
 </head>
 <body>
-    <div class="container">
-        <h2>用户注册</h2>
-        <form method="post">
-            {% csrf_token %}
-            {{ form.as_p }}
-            <button type="submit">注册</button>
-        </form>
+    <div class="auth-page">
+        <div class="auth-card">
+            <div class="auth-header">
+                <div class="auth-logo">L</div>
+                <h1 class="auth-title">创建账号</h1>
+                <p class="auth-subtitle">注册加入标注平台</p>
+            </div>
+
+            {% if messages %}
+                {% for msg in messages %}
+                <div class="alert alert-{{ msg.tags|default:'info' }}">
+                    {{ msg }}
+                </div>
+                {% endfor %}
+            {% endif %}
+
+            <form method="post">
+                {% csrf_token %}
+                {% for field in form %}
+                <div class="form-group">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    <input type="{{ field.field.widget.input_type }}"
+                           name="{{ field.name }}"
+                           id="{{ field.id_for_label }}"
+                           class="form-control"
+                           placeholder="{{ field.label }}"
+                           {% if field.field.required %}required{% endif %}
+                           autocomplete="off">
+                    {% if field.errors %}
+                        <div class="alert alert-danger" style="margin-top:8px;margin-bottom:0;">
+                            {{ field.errors.0 }}
+                        </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                <button type="submit" class="btn btn-primary btn-block btn-lg">注 册</button>
+            </form>
+
+            <div class="auth-footer">
+                已有账号？<a href="{% url 'login' %}">立即登录</a>
+            </div>
+        </div>
     </div>
 </body>
 </html>
